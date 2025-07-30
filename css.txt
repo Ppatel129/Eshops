@@ -1,0 +1,11 @@
+#0d49a3 Dark Blue
+#1974d0 Lighter Blue
+#1974d0 Light Blue
+
+#BB0A21 Red
+#EDAE49 Yellow
+#109648 Green
+
+#201E1D Black
+#9E9794 Grey
+#ECEAEA Lighter Grey 
