@@ -3,6 +3,8 @@ from typing import Optional
 
 class Settings:
     # Database configuration
+    # For local development, use default PostgreSQL connection
+    # For cloud deployment, set DATABASE_URL environment variable
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres_id3q_user:WuL9RFOo5qjK1Hnmau9moYUf0JA1CgTi@dpg-d1vvjdemcj7s73fpgo2g-a:5432/postgres_id3q")
     
     # API Configuration
