@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings:
     # Database configuration
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:123123@localhost:5432/postgres")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres_id3q_user:WuL9RFOo5qjK1Hnmau9moYUf0JA1CgTi@dpg-d1vvjdemcj7s73fpgo2g-a:5432/postgres_id3q")
     
     # API Configuration
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
