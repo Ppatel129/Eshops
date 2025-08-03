@@ -20,6 +20,7 @@ from elasticsearch_service import elasticsearch_service
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 import uvicorn
+from sqlalchemy import select, func
 
 # Configure logging
 logging.basicConfig(
@@ -93,6 +94,119 @@ async def admin():
     with open("static/admin.html", "r") as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/terms", response_class=HTMLResponse)
+async def terms():
+    """Serve the terms of service page"""
+    with open("static/terms.html", "r") as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/privacy", response_class=HTMLResponse)
+async def privacy():
+    """Serve the privacy policy page"""
+    with open("static/privacy.html", "r") as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/all-products")
+async def get_all_products(
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(20, ge=1, le=100, description="Results per page"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all products without any filters - for testing"""
+    try:
+        # Get total count
+        count_result = await db.execute(select(func.count()).select_from(Product))
+        total = count_result.scalar()
+        
+        # Get products with pagination
+        offset = (page - 1) * per_page
+        query = select(Product).offset(offset).limit(per_page)
+        
+        result = await db.execute(query)
+        products = result.scalars().all()
+        
+        # Convert to response format
+        product_list = []
+        for product in products:
+            product_data = {
+                "id": product.id,
+                "title": product.title,
+                "description": product.description,
+                "price": float(product.price) if product.price else None,
+                "image_url": product.image_url,
+                "availability": product.availability,
+                "ean": product.ean,
+                "mpn": product.mpn,
+                "shop": {"name": product.shop.name} if product.shop else None,
+                "brand": {"name": product.brand.name} if product.brand else None,
+                "category": {"name": product.category.name} if product.category else None,
+                "updated_at": product.updated_at.isoformat() if product.updated_at else None
+            }
+            product_list.append(product_data)
+        
+        total_pages = (total + per_page - 1) // per_page
+        
+        return {
+            "products": product_list,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "search_type": "all_products"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting all products: {e}")
+        return {
+            "products": [],
+            "total": 0,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": 0,
+            "error": str(e)
+        }
+
+@app.get("/test-search")
+async def test_search(db: AsyncSession = Depends(get_db)):
+    """Test endpoint to check if search is working"""
+    try:
+        # Check if we have any products
+        count_result = await db.execute(select(func.count()).select_from(Product))
+        total_products = count_result.scalar()
+        
+        # Get a few sample products
+        sample_result = await db.execute(select(Product).limit(5))
+        sample_products = sample_result.scalars().all()
+        
+        # Check if we have any brands
+        brand_result = await db.execute(select(func.count()).select_from(Brand))
+        total_brands = brand_result.scalar()
+        
+        # Check if we have any categories
+        category_result = await db.execute(select(func.count()).select_from(Category))
+        total_categories = category_result.scalar()
+        
+        return {
+            "status": "success",
+            "total_products": total_products,
+            "total_brands": total_brands,
+            "total_categories": total_categories,
+            "sample_products": [
+                {
+                    "id": p.id,
+                    "title": p.title,
+                    "price": p.price,
+                    "shop_id": p.shop_id
+                } for p in sample_products
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Test search error: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
 @app.get("/search")
 async def unified_search(
     q: Optional[str] = Query(None, description="Search query"),
@@ -115,16 +229,20 @@ async def unified_search(
     per_page: int = Query(20, ge=1, le=100, description="Results per page"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Unified search for products and categories with multi-shop aggregation"""
+    """Unified search endpoint with enhanced error handling"""
     try:
-        search_service = SearchService(db)
-        
-        # Build filters - handle both single and multi-select
+        # Validate and sanitize inputs
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:
+            per_page = 20
+            
+        # Build search filters
         filters = SearchFilters(
-            title=q or title,
+            title=title or q,  # Use q as title if no specific title filter
             brand=brand,
-            category=category,
             brands=brands,
+            category=category,
             categories=categories,
             min_price=min_price,
             max_price=max_price,
@@ -135,37 +253,74 @@ async def unified_search(
             size=size,
             shops=shops
         )
+
+        search_service = SearchService(db)
         
-        if type == "categories":
-            # Search only categories
-            categories = await search_service.search_categories(q or "", per_page)
-            return {
-                "type": "categories",
-                "categories": categories,
-                "total": len(categories),
-                "page": page,
-                "per_page": per_page
-            }
-        elif type == "products":
-            # Search only products with multi-shop aggregation
-            results = await search_service.search_products_aggregated(filters, page, per_page, sort)
-            return results
-        else:
-            # Unified search (default)
-            products = await search_service.search_products_aggregated(filters, page, min(per_page // 2, 20), sort)
-            categories = await search_service.search_categories(q or "", min(per_page // 2, 12))
-            
-            return {
-                "type": "unified",
-                "products": products,
-                "categories": categories,
-                "page": page,
-                "per_page": per_page
-            }
+        # Log search request for debugging
+        logger.info(f"Search request: query='{q}', filters={filters.dict()}, page={page}, per_page={per_page}")
         
+        # Perform search with AI-enhanced processing
+        try:
+            if type == "categories":
+                results = await search_service.search_categories(q or "", limit=per_page)
+                return {
+                    "categories": results,
+                    "total": len(results),
+                    "page": page,
+                    "per_page": per_page,
+                    "search_type": "categories"
+                }
+            else:
+                # Use AI-enhanced aggregated search as primary method
+                try:
+                    results = await search_service.search_products_aggregated(
+                        filters, page, per_page, sort
+                    )
+                    logger.info("AI-enhanced search successful")
+                    return results
+                except Exception as ai_error:
+                    logger.warning(f"AI-enhanced search failed: {ai_error}")
+                    # Fallback to basic search
+                    try:
+                        results = await search_service.search_products(filters, page, per_page)
+                        logger.info("Basic search successful")
+                        return results
+                    except Exception as basic_error:
+                        logger.error(f"All search methods failed: {basic_error}")
+                        # Return empty results
+                        return {
+                            "products": [],
+                            "total": 0,
+                            "page": page,
+                            "per_page": per_page,
+                            "total_pages": 0,
+                            "execution_time_ms": 0,
+                            "search_type": "fallback",
+                            "error": "No results found"
+                        }
+                
+        except Exception as search_error:
+            logger.error(f"All search methods failed: {search_error}")
+            # Return empty results instead of error
+            return {
+                "products": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": 0,
+                "execution_time_ms": 0,
+                "search_type": "fallback",
+                "error": "No results found"
+            }
+                
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail="Search service error")
+        logger.error(f"Unexpected error in search endpoint: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail="An unexpected error occurred. Please try again later."
+        )
 
 @app.get("/categories/search")
 async def search_categories(
@@ -212,6 +367,27 @@ async def get_product_by_id(
         logger.error(f"Error getting product by ID {product_id}: {e}")
         raise HTTPException(status_code=500, detail="Product retrieval error")
 
+@app.get("/product/{product_id}/comparison")
+async def get_product_comparison(
+    product_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get product comparison data - all individual products that make up an aggregated product"""
+    try:
+        search_service = SearchService(db)
+        comparison_data = await search_service.get_product_comparison(product_id)
+        
+        if not comparison_data:
+            raise HTTPException(status_code=404, detail="Product comparison not found")
+        
+        return comparison_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting product comparison {product_id}: {e}")
+        raise HTTPException(status_code=500, detail="Product comparison retrieval error")
+
 @app.get("/product/ean/{ean}", response_model=ProductSchema)
 async def get_product_by_ean(
     ean: str,
@@ -237,25 +413,30 @@ async def get_product_by_ean(
 async def get_search_suggestions(
     q: str = Query(..., min_length=2, description="Search query"),
     limit: int = Query(10, ge=1, le=20, description="Maximum suggestions"),
+    fuzzy: bool = Query(True, description="Enable fuzzy search"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get search suggestions with Elasticsearch fallback"""
+    """Get AI-enhanced search suggestions with fuzzy search support"""
     try:
-        # Try Elasticsearch first
-        # if elasticsearch_service.client:
-        #     suggestions = await elasticsearch_service.get_suggestions(q, limit)
-        #     if suggestions:
-        #         return suggestions
-        
-        # Fallback to PostgreSQL
         search_service = SearchService(db)
+        
+        # Always use AI-enhanced suggestions first
         suggestions = await search_service.get_search_suggestions(q, limit)
+        
+        # If no AI suggestions, try fuzzy search
+        if not suggestions:
+            suggestions = await search_service.fuzzy_search_suggestions(q, limit)
+        
+        # If still no suggestions, try basic search
+        if not suggestions:
+            suggestions = await search_service._get_database_suggestions(q, limit)
         
         return suggestions
         
     except Exception as e:
         logger.error(f"Error getting suggestions: {e}")
-        raise HTTPException(status_code=500, detail="Suggestions service error")
+        # Return empty list instead of error to prevent frontend issues
+        return []
 
 @app.get("/facets")
 async def get_search_facets(
@@ -291,7 +472,6 @@ async def get_search_facets(
 async def get_shops(db: AsyncSession = Depends(get_db)):
     """Get all shops"""
     try:
-        from sqlalchemy import select
         result = await db.execute(select(Shop))
         shops = result.scalars().all()
         
@@ -306,7 +486,6 @@ async def create_shop(shop: ShopCreate, db: AsyncSession = Depends(get_db)):
     """Create a new shop."""
     try:
         # Check for duplicate shop name
-        from sqlalchemy import select
         result = await db.execute(select(Shop).where(Shop.name == shop.name))
         existing = result.scalar_one_or_none()
         if existing:
@@ -326,13 +505,10 @@ async def create_shop(shop: ShopCreate, db: AsyncSession = Depends(get_db)):
 async def delete_shop(shop_id: int, db: AsyncSession = Depends(get_db)):
     """Delete a shop by ID, including all its products (cascade)."""
     try:
-        from sqlalchemy import select, delete
-        # Check if shop exists
         result = await db.execute(select(Shop).where(Shop.id == shop_id))
         shop = result.scalar_one_or_none()
         if not shop:
             raise HTTPException(status_code=404, detail="Shop not found")
-        # Delete the shop (products will be deleted via cascade)
         await db.delete(shop)
         await db.commit()
         return
@@ -359,8 +535,6 @@ async def process_feeds(background_tasks: BackgroundTasks):
 async def get_stats(db: AsyncSession = Depends(get_db)):
     """Get system statistics"""
     try:
-        from sqlalchemy import select, func
-        
         # Get counts
         shop_count = await db.execute(select(func.count(Shop.id)))
         product_count = await db.execute(select(func.count(Product.id)))
@@ -391,7 +565,14 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "timestamp": "2025-01-03T12:00:00Z"}
+    from datetime import datetime
+    
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "message": "Application is running"
+    }
 
 if __name__ == "__main__":
     uvicorn.run(

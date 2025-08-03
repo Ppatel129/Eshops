@@ -9,24 +9,27 @@
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/noUiSlider/15.6.1/nouislider.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Cal+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
     <!-- Landing Page -->
     <div id="landingContainer" class="landing-container">
-        <div class="logoContainer">
-            <div id="logo" class="logo" tabindex="0" onclick="window.location.replace('/admin')">Market.gr</div>
-        </div>
-        <div>
-            <div class="search-bar-wrapper" id="searchBarWrapper">
-                <i class="fas fa-search search-icon"></i>
-                <input id="mainSearch" class="main-search" type="text" placeholder="Search..." autocomplete="on">
-                <button id="voiceBtn" class="voice-btn" title="Voice Search"><i class="fas fa-microphone"></i></button>
-                <button id="imageBtn" class="image-btn" title="Image Search"><i class="fas fa-camera"></i></button>
+        <div class="centered-content">
+            <div class="logoContainer">
+                <div id="logo" class="logo" tabindex="0" onclick="window.location.replace('/admin')">Market.gr</div>
             </div>
-            <div id="suggestionsDropdown" class="suggestions-dropdown"></div>
+            <div class="search-container">
+                <div class="search-bar-wrapper" id="searchBarWrapper">
+                    <i class="fas fa-search search-icon"></i>
+                    <input id="mainSearch" class="main-search" type="text" placeholder="Search..." autocomplete="on">
+                    <button id="voiceBtn" class="voice-btn" title="Voice Search"><i class="fas fa-microphone"></i></button>
+                    <button id="imageBtn" class="image-btn" title="Image Search"><i class="fas fa-camera"></i></button>
+                    <div id="suggestionsDropdown" class="suggestions-dropdown"></div>
+                </div>
+            </div>
         </div>
-        <div>
+        <div class="burger-container">
             <div id="burgerMenu" class="burger-menu">
                 <span></span><span></span><span></span>
             </div>
@@ -34,26 +37,28 @@
                 <ul>
                     <li><i class="fas fa-user"></i> Login</li>
                     <li><i class="fas fa-clock"></i> History</li>
-                    <li><i class="fas fa-file-alt"></i> Terms</li>
-                    <li><i class="fas fa-comments"></i> Chat</li>
+                    <li><i class="fas fa-file-alt"></i> <a href="/terms" style="text-decoration: none; color: inherit;">Terms</a></li>
+                    <li><i class="fas fa-shield-alt"></i> <a href="/privacy" style="text-decoration: none; color: inherit;">Privacy</a></li>
                 </ul>
             </div>
         </div>
-
     </div>
 
     <!-- Search Results Page -->
     <div id="mainContent" class="main-content" style="display:none;">
         <!-- Header -->
         <div class="search-header d-flex">
-            <div class="logo" style="padding-left: 2rem;" onclick="window.location.href='/admin'">Market.gr</div>
+            <div class="logo" style="padding-left: 2rem;" onclick="window.location.href='/'">Market.gr</div>
             <div class="container-fluid">
                 <div class="row justify-content-center align-items-center flex-column flex-md-row">
                     <div class="col-md-6 d-flex justify-content-start mb-2 mb-md-0">
                         <div class="search-bar-wrapper">
+                            <i class="fas fa-search search-icon"></i>
                             <input id="headerSearch" class="main-search" type="text" placeholder="Search products..."
                                 autocomplete="on">
-                            <button id="headerSearchBtn" class="search-btn"><i class="fas fa-search"></i></button>
+                            <button id="voiceBtnHeader" class="voice-btn" title="Voice Search"><i class="fas fa-microphone"></i></button>
+                            <button id="imageBtnHeader" class="image-btn" title="Image Search"><i class="fas fa-camera"></i></button>
+                            <div id="headerSuggestionsDropdown" class="suggestions-dropdown"></div>
                         </div>
                     </div>
                     <div class="col-md-6 text-center text-md-end">
@@ -64,8 +69,8 @@
                             <ul>
                                 <li><i class="fas fa-user"></i> Login</li>
                                 <li><i class="fas fa-clock"></i> History</li>
-                                <li><i class="fas fa-file-alt"></i> Terms</li>
-                                <li><i class="fas fa-comments"></i> Chat</li>
+                                <li><i class="fas fa-file-alt"></i> <a href="/terms" style="text-decoration: none; color: inherit;">Terms</a></li>
+                                <li><i class="fas fa-shield-alt"></i> <a href="/privacy" style="text-decoration: none; color: inherit;">Privacy</a></li>
                             </ul>
                         </div>
                     </div>
@@ -101,6 +106,26 @@
                             <div class="filter-option">
                                 <input type="checkbox" id="inStock" value="true">
                                 <label for="inStock">In stock</label>
+                            </div>
+                        </div>
+
+                        <div class="filter-section">
+                            <div class="filter-title"><i class="fas fa-tags me-2"></i>Brand</div>
+                            <div class="filter-search-container">
+                                <input type="text" class="filter-search-input" id="brandSearch" placeholder="Search brands...">
+                            </div>
+                            <div class="filter-options" id="brandFilters">
+                                <!-- Brand filters will be populated dynamically -->
+                            </div>
+                        </div>
+
+                        <div class="filter-section">
+                            <div class="filter-title"><i class="fas fa-layer-group me-2"></i>Category</div>
+                            <div class="filter-search-container">
+                                <input type="text" class="filter-search-input" id="categorySearch" placeholder="Search categories...">
+                            </div>
+                            <div class="filter-options" id="categoryFilters">
+                                <!-- Category filters will be populated dynamically -->
                             </div>
                         </div>
 

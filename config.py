@@ -3,11 +3,11 @@ from typing import Optional
 
 class Settings:
     # Database configuration
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres_id3q_user:WuL9RFOo5qjK1Hnmau9moYUf0JA1CgTi@dpg-d1vvjdemcj7s73fpgo2g-a:5432/postgres_id3q")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:123123@localhost:5432/postgres")
     
     # API Configuration
-    API_HOST: str = "0.0.0.0"
-    API_PORT: int = 8000
+    API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
+    API_PORT: int = int(os.getenv("API_PORT", "8000"))
     
     # XML Feed URLs
     XML_FEEDS = {
@@ -34,5 +34,10 @@ class Settings:
     
     # Elasticsearch configuration
     ELASTICSEARCH_ENABLED: bool = os.getenv("ELASTICSEARCH_ENABLED", "false").lower() == "true"
+    ELASTICSEARCH_HOST: str = os.getenv("ELASTICSEARCH_HOST", "localhost")
+    ELASTICSEARCH_PORT: int = int(os.getenv("ELASTICSEARCH_PORT", "9200"))
+    ELASTICSEARCH_USERNAME: Optional[str] = os.getenv("ELASTICSEARCH_USERNAME")
+    ELASTICSEARCH_PASSWORD: Optional[str] = os.getenv("ELASTICSEARCH_PASSWORD")
+    ELASTICSEARCH_USE_SSL: bool = os.getenv("ELASTICSEARCH_USE_SSL", "false").lower() == "true"
 
 settings = Settings()

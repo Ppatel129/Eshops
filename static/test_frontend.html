@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .product-card {
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .product-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .product-image {
+            height: 200px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1>Frontend Test</h1>
+        
+        <div class="row mb-3">
+            <div class="col">
+                <button class="btn btn-primary" onclick="testSearch()">Test Search</button>
+                <button class="btn btn-secondary" onclick="testSuggestions()">Test Suggestions</button>
+                <button class="btn btn-success" onclick="testInitialLoad()">Test Initial Load</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div id="results"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function testSearch() {
+            try {
+                const response = await fetch('/search?q=samsung&page=1&per_page=5');
+                const data = await response.json();
+                displayResults(data, 'Search Results');
+            } catch (error) {
+                console.error('Search error:', error);
+                document.getElementById('results').innerHTML = `<div class="alert alert-danger">Search error: ${error.message}</div>`;
+            }
+        }
+
+        async function testSuggestions() {
+            try {
+                const response = await fetch('/suggestions?q=sam&limit=5');
+                const data = await response.json();
+                document.getElementById('results').innerHTML = `
+                    <div class="alert alert-info">
+                        <h5>Suggestions for "sam":</h5>
+                        <ul>${data.map(s => `<li>${s}</li>`).join('')}</ul>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Suggestions error:', error);
+                document.getElementById('results').innerHTML = `<div class="alert alert-danger">Suggestions error: ${error.message}</div>`;
+            }
+        }
+
+        async function testInitialLoad() {
+            try {
+                const response = await fetch('/search?page=1&per_page=10');
+                const data = await response.json();
+                displayResults(data, 'Initial Load Results');
+            } catch (error) {
+                console.error('Initial load error:', error);
+                document.getElementById('results').innerHTML = `<div class="alert alert-danger">Initial load error: ${error.message}</div>`;
+            }
+        }
+
+        function displayResults(data, title) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (!data || !data.products || data.products.length === 0) {
+                resultsDiv.innerHTML = `<div class="alert alert-warning">${title}: No products found</div>`;
+                return;
+            }
+
+            let html = `
+                <div class="alert alert-success">
+                    <h5>${title}</h5>
+                    <p>Found ${data.total} products, showing ${data.products.length}</p>
+                </div>
+                <div class="row">
+            `;
+
+            data.products.forEach(product => {
+                const price = product.price ? `€${parseFloat(product.price).toFixed(2)}` : 'Price not available';
+                const imageUrl = product.image_url || 'https://via.placeholder.com/200x150?text=No+Image';
+                
+                html += `
+                    <div class="col-md-6 col-lg-4 mb-4">
+                        <div class="card h-100 product-card">
+                            <img src="${imageUrl}" class="card-img-top product-image" alt="${product.title}" onerror="this.src='https://via.placeholder.com/200x150?text=No+Image'">
+                            <div class="card-body">
+                                <h6 class="card-title">${product.title}</h6>
+                                <p class="card-text small text-muted">${product.description ? product.description.substring(0, 100) + '...' : ''}</p>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <strong class="text-primary">${price}</strong>
+                                    <span class="badge ${product.availability ? 'bg-success' : 'bg-danger'}">
+                                        ${product.availability ? 'Available' : 'Out of Stock'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            resultsDiv.innerHTML = html;
+        }
+
+        // Auto-run initial load test
+        window.onload = function() {
+            testInitialLoad();
+        };
+    </script>
+</body>
+</html> 

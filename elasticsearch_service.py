@@ -24,35 +24,34 @@ class ElasticsearchService:
             self.client = None
             return False
             
-        # First check if Elasticsearch is available without creating a client
+        # Build connection configuration
+        hosts = [{
+            "host": self.settings.ELASTICSEARCH_HOST,
+            "port": self.settings.ELASTICSEARCH_PORT,
+            "scheme": "https" if self.settings.ELASTICSEARCH_USE_SSL else "http"
+        }]
+        
+        # Add authentication if provided
+        auth = None
+        if self.settings.ELASTICSEARCH_USERNAME and self.settings.ELASTICSEARCH_PASSWORD:
+            auth = (self.settings.ELASTICSEARCH_USERNAME, self.settings.ELASTICSEARCH_PASSWORD)
+        
         try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex(('localhost', 9200))
-            sock.close()
-            
-            if result != 0:
-                logger.warning("Elasticsearch not available (port 9200 not accessible), falling back to PostgreSQL search")
-                self.client = None
-                return False
-        except Exception:
-            logger.warning("Could not check Elasticsearch availability, falling back to PostgreSQL search")
-            self.client = None
-            return False
-            
-        try:
-            # Only create client if port is accessible
+            # Create client with configuration
             self.client = AsyncElasticsearch(
-                hosts=[{"host": "localhost", "port": 9200, "scheme": "http"}],
-                timeout=3,  # Very short timeout
-                max_retries=0,  # No retries
-                retry_on_timeout=False
+                hosts=hosts,
+                basic_auth=auth,
+                timeout=5,
+                max_retries=1,
+                retry_on_timeout=True,
+                verify_certs=False if not self.settings.ELASTICSEARCH_USE_SSL else True
             )
-            # Test connection with very short timeout
-            await asyncio.wait_for(self.client.ping(), timeout=2.0)
-            logger.info("Connected to Elasticsearch successfully")
+            
+            # Test connection
+            await asyncio.wait_for(self.client.ping(), timeout=3.0)
+            logger.info(f"Connected to Elasticsearch at {self.settings.ELASTICSEARCH_HOST}:{self.settings.ELASTICSEARCH_PORT}")
             return True
+            
         except Exception as e:
             logger.warning(f"Elasticsearch connection failed ({type(e).__name__}), falling back to PostgreSQL search")
             self.client = None

@@ -158,6 +158,40 @@ CREATE INDEX idx_products_title_trgm ON products USING gin(title gin_trgm_ops);
 CREATE INDEX idx_brands_name_trgm ON brands USING gin(name gin_trgm_ops);
 CREATE INDEX idx_categories_name_trgm ON categories USING gin(name gin_trgm_ops);
 
+-- Performance optimization indexes
+CREATE INDEX IF NOT EXISTS idx_products_title_lower ON products (LOWER(title));
+CREATE INDEX IF NOT EXISTS idx_products_price ON products (price);
+CREATE INDEX IF NOT EXISTS idx_products_availability ON products (availability);
+CREATE INDEX IF NOT EXISTS idx_products_ean ON products (ean);
+CREATE INDEX IF NOT EXISTS idx_products_mpn ON products (mpn);
+CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products (shop_id);
+CREATE INDEX IF NOT EXISTS idx_products_brand_id ON products (brand_id);
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON products (category_id);
+CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products (updated_at);
+
+-- Composite indexes for common query patterns
+CREATE INDEX IF NOT EXISTS idx_products_title_price ON products (LOWER(title), price);
+CREATE INDEX IF NOT EXISTS idx_products_brand_price ON products (brand_id, price);
+CREATE INDEX IF NOT EXISTS idx_products_category_price ON products (category_id, price);
+CREATE INDEX IF NOT EXISTS idx_products_availability_price ON products (availability, price);
+
+-- Enable trigram extension for better text search
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- Create trigram indexes for fuzzy text search
+CREATE INDEX IF NOT EXISTS idx_products_title_trgm ON products USING gin (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_brands_name_trgm ON brands USING gin (name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_categories_name_trgm ON categories USING gin (name gin_trgm_ops);
+
+-- Optimize shop queries
+CREATE INDEX IF NOT EXISTS idx_shops_name ON shops (name);
+
+-- Analyze tables for better query planning
+ANALYZE products;
+ANALYZE brands;
+ANALYZE categories;
+ANALYZE shops;
+
 -- Create functions for automatic timestamp updates
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$

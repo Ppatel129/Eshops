@@ -7,6 +7,16 @@ class ProductSearchApp {
         this.facetsData = {};
         this.suggestionTimeout = null;
         this.suggestionsDropdown = document.getElementById('suggestionsDropdown');
+        this.headerSuggestionsDropdown = document.getElementById('headerSuggestionsDropdown');
+        
+        // Check if suggestionsDropdown is found
+        if (!this.suggestionsDropdown) {
+            console.error('❌ suggestionsDropdown element not found!');
+        }
+        if (!this.headerSuggestionsDropdown) {
+            console.error('❌ headerSuggestionsDropdown element not found!');
+        }
+        
         this.init();
     }
 
@@ -89,12 +99,16 @@ class ProductSearchApp {
             if (this.suggestionsDropdown && !searchInput.contains(e.target) && !this.suggestionsDropdown.contains(e.target)) {
                 this.suggestionsDropdown.style.display = 'none';
             }
+            if (this.headerSuggestionsDropdown && !searchInput.contains(e.target) && !this.headerSuggestionsDropdown.contains(e.target)) {
+                this.headerSuggestionsDropdown.style.display = 'none';
+            }
         });
     }
 
     setupSearchResultsPage() {
         const headerSearch = document.getElementById('headerSearch');
-        const headerSearchBtn = document.getElementById('headerSearchBtn');
+        const voiceBtnHeader = document.getElementById('voiceBtnHeader');
+        const imageBtnHeader = document.getElementById('imageBtnHeader');
         const headerBurgerMenu = document.getElementById('headerBurgerMenu');
         const headerBurgerDropdown = document.getElementById('headerBurgerDropdown');
 
@@ -110,10 +124,46 @@ class ProductSearchApp {
             }
         });
 
-        headerSearchBtn.addEventListener('click', () => {
-            this.currentPage = 1;
-            this.performSearch(this.currentPage);
+        // Header voice input functionality
+        voiceBtnHeader.addEventListener('click', () => {
+            this.startVoiceInput(headerSearch);
         });
+
+        // Header image input functionality
+        imageBtnHeader.addEventListener('click', () => {
+            this.startImageInput(headerSearch);
+        });
+
+        // Header suggestions dropdown
+        headerSearch.addEventListener('focus', () => {
+            if (this.headerSuggestionsDropdown && this.headerSuggestionsDropdown.children.length > 0) {
+                this.headerSuggestionsDropdown.style.display = 'block';
+            }
+        });
+
+        // Filter search functionality
+        const brandSearch = document.getElementById('brandSearch');
+        const categorySearch = document.getElementById('categorySearch');
+        const clearFiltersBtn = document.getElementById('clearFilters');
+
+        if (brandSearch) {
+            brandSearch.addEventListener('input', (e) => {
+                this.filterBrandOptions(e.target.value);
+            });
+        }
+
+        if (categorySearch) {
+            categorySearch.addEventListener('input', (e) => {
+                this.filterCategoryOptions(e.target.value);
+            });
+        }
+
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => {
+                this.clearAllFilters();
+                this.updateFilters();
+            });
+        }
 
         // Header burger menu functionality
         let headerBurgerOpen = false;
@@ -209,14 +259,24 @@ class ProductSearchApp {
         this.currentQuery = query;
         
         // Hide landing page
-        document.getElementById('landingContainer').style.display = 'none';
+        const landingContainer = document.getElementById('landingContainer');
+        if (landingContainer) {
+            landingContainer.style.display = 'none';
+        }
         
         // Show search results page
         const mainContent = document.getElementById('mainContent');
-        mainContent.style.display = 'block';
+        if (mainContent) {
+            mainContent.style.display = 'block';
+        } else {
+            console.error('Main content element not found!');
+        }
         
         // Set the header search value
-        document.getElementById('headerSearch').value = query;
+        const headerSearch = document.getElementById('headerSearch');
+        if (headerSearch) {
+            headerSearch.value = query;
+        }
         
         // Perform search
         this.currentPage = 1;
@@ -240,6 +300,9 @@ class ProductSearchApp {
             if (this.suggestionsDropdown) {
                 this.suggestionsDropdown.style.display = 'none';
             }
+            if (this.headerSuggestionsDropdown) {
+                this.headerSuggestionsDropdown.style.display = 'none';
+            }
         }
     }
 
@@ -247,12 +310,24 @@ class ProductSearchApp {
 
     async getSuggestions(query) {
         try {
-            // Get regular search suggestions
-            const suggestionsResponse = await fetch(`/suggestions?q=${encodeURIComponent(query)}&limit=5`);
+            // Get regular search suggestions with fuzzy search enabled
+            const suggestionsResponse = await fetch(`/suggestions?q=${encodeURIComponent(query)}&limit=5&fuzzy=true`);
+            
+            if (!suggestionsResponse.ok) {
+                console.error('Suggestions API error:', suggestionsResponse.status, suggestionsResponse.statusText);
+                return;
+            }
+            
             const suggestions = await suggestionsResponse.json();
 
             // Get category suggestions
             const categoriesResponse = await fetch(`/categories/search?q=${encodeURIComponent(query)}&limit=3`);
+            
+            if (!categoriesResponse.ok) {
+                console.error('Categories API error:', categoriesResponse.status, categoriesResponse.statusText);
+                return;
+            }
+            
             const categories = await categoriesResponse.json();
 
             this.displaySuggestions(suggestions, categories);
@@ -261,17 +336,31 @@ class ProductSearchApp {
         }
     }
 
-    displaySuggestions(suggestions, categories = []) {
+    displaySuggestions(suggestions, categories = [], targetDropdown = null) {
+        // Determine which dropdown to use
+        let dropdown = targetDropdown;
+        if (!dropdown) {
+            // Auto-detect based on which search input is focused
+            const mainSearch = document.getElementById('mainSearch');
+            const headerSearch = document.getElementById('headerSearch');
+            
+            if (document.activeElement === headerSearch) {
+                dropdown = this.headerSuggestionsDropdown;
+            } else {
+                dropdown = this.suggestionsDropdown;
+            }
+        }
+        
         // Check if suggestions dropdown exists
-        if (!this.suggestionsDropdown) {
-            console.warn('Suggestions dropdown element not found');
+        if (!dropdown) {
+            console.warn('No suggestions dropdown element found');
             return;
         }
 
         let html = '';
 
         // Display regular search suggestions
-        if (suggestions.length > 0) {
+        if (suggestions && suggestions.length > 0) {
             html += '<div class="suggestion-section"><div class="suggestion-title">Search Suggestions</div>';
             suggestions.forEach(suggestion => {
                 html += `
@@ -285,7 +374,7 @@ class ProductSearchApp {
         }
 
         // Display category suggestions
-        if (categories.length > 0) {
+        if (categories && categories.length > 0) {
             html += '<div class="suggestion-section"><div class="suggestion-title">Categories</div>';
             categories.forEach(category => {
                 const categoryName = category.name || category.key || category;
@@ -302,12 +391,16 @@ class ProductSearchApp {
         }
 
         if (html === '') {
-            this.suggestionsDropdown.style.display = 'none';
+            dropdown.style.display = 'none';
             return;
         }
 
-        this.suggestionsDropdown.innerHTML = html;
-        this.suggestionsDropdown.style.display = 'block';
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+        
+        // Force the dropdown to be visible
+        dropdown.style.visibility = 'visible';
+        dropdown.style.opacity = '1';
     }
 
     selectSuggestion(suggestion) {
@@ -321,7 +414,19 @@ class ProductSearchApp {
         if (this.suggestionsDropdown) {
             this.suggestionsDropdown.style.display = 'none';
         }
-        this.performSearch();
+        if (this.headerSuggestionsDropdown) {
+            this.headerSuggestionsDropdown.style.display = 'none';
+        }
+        
+        // Check which page we're on and handle accordingly
+        if (searchInput && searchInput.id === 'mainSearch') {
+            // We're on the landing page, transition to search results
+            this.transitionToSearchResults(suggestion);
+        } else {
+            // We're on the search results page, perform search
+            this.currentPage = 1;
+            this.performSearch(this.currentPage);
+        }
     }
 
     selectCategorySuggestion(categoryName) {
@@ -335,6 +440,9 @@ class ProductSearchApp {
         this.currentQuery = categoryName;
         if (this.suggestionsDropdown) {
             this.suggestionsDropdown.style.display = 'none';
+        }
+        if (this.headerSuggestionsDropdown) {
+            this.headerSuggestionsDropdown.style.display = 'none';
         }
         
         // Perform search with category filter
@@ -388,8 +496,15 @@ class ProductSearchApp {
     }
 
     async performInitialSearch() {
-        this.showLoading(true);
-        await this.performSearch();
+        // Show some products by default instead of empty state
+        try {
+            const response = await fetch('/all-products?page=1&per_page=20');
+            const data = await response.json();
+            this.displayResults(data);
+        } catch (error) {
+            console.error('Error performing initial search:', error);
+            this.showError('Failed to load products. Please refresh the page.');
+        }
     }
 
     async performSearch(page = 1) {
@@ -449,36 +564,71 @@ class ProductSearchApp {
     }
 
     displayResults(data) {
-        const { products, total, page, per_page, total_pages } = data;
-        
-        // Update results count
-        document.getElementById('resultsCount').textContent = `${total.toLocaleString()} results`;
-        document.getElementById('resultsMeta').textContent = `Page ${page} of ${total_pages}`;
+        const productGrid = document.getElementById('productGrid');
+        const noResults = document.getElementById('noResults');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const resultsCount = document.getElementById('resultsCount');
+        const resultsMeta = document.getElementById('resultsMeta');
 
-        if (products.length === 0) {
-            this.showNoResults();
+        // Hide loading spinner
+        this.showLoading(false);
+
+        // Check if we have products
+        if (!data || !data.products || data.products.length === 0) {
+            // Show no results message
+            if (productGrid) productGrid.innerHTML = '';
+            if (noResults) {
+                noResults.style.display = 'block';
+                // Customize message based on search type
+                const searchQuery = this.currentQuery || 'your search';
+                noResults.innerHTML = `
+                    <i class="fas fa-search"></i>
+                    <h5>No products found</h5>
+                    <p>No products match "${searchQuery}". Try different keywords or clear some filters.</p>
+                    <button class="btn btn-primary mt-3" onclick="app.clearAllFilters()">Clear All Filters</button>
+                `;
+            }
+            if (resultsCount) resultsCount.textContent = 'No results found';
+            if (resultsMeta) resultsMeta.textContent = '';
             return;
         }
 
-        // Display products
-        const productGrid = document.getElementById('productGrid');
-        productGrid.innerHTML = `
-                    <div class="row">
-                ${products.map(product => this.createProductCard(product)).join('')}
-            </div>
-        `;
+        // Hide no results message
+        if (noResults) noResults.style.display = 'none';
 
-        // Update pagination
-        this.updatePagination(page, total_pages);
-
-        // Update facets
-        if (data.facets) {
-            this.updateFacets(data.facets);
+        // Update results count and meta
+        if (resultsCount) {
+            resultsCount.textContent = `Found ${data.total} product${data.total !== 1 ? 's' : ''}`;
+        }
+        
+        if (resultsMeta) {
+            const executionTime = data.execution_time_ms ? ` in ${data.execution_time_ms}ms` : '';
+            resultsMeta.textContent = `Page ${data.page} of ${data.total_pages}${executionTime}`;
         }
 
-        // Show results
-        document.getElementById('noResults').style.display = 'none';
-        productGrid.style.display = 'block';
+        // Build product grid
+        let html = '';
+        data.products.forEach(product => {
+            html += this.createProductCard(product);
+        });
+
+        if (productGrid) {
+            productGrid.innerHTML = html;
+            productGrid.style.display = 'grid';
+        } else {
+            console.error('Product grid element not found!');
+        }
+
+        // Update pagination
+        if (data.total_pages > 1) {
+            this.updatePagination(data.page, data.total_pages);
+        } else {
+            const paginationContainer = document.getElementById('paginationContainer');
+            if (paginationContainer) paginationContainer.innerHTML = '';
+        }
+
+        // Update search stats
+        this.updateSearchStats(data);
     }
 
     createProductCard(product) {
@@ -541,6 +691,10 @@ class ProductSearchApp {
         let shopInfo = '';
         if (product.shop_count && product.shop_count > 0) {
             shopInfo = `<small class="text-muted">${product.shop_count} shops</small>`;
+            // Add price comparison info if available
+            if (product.price_comparison && product.shop_count > 1) {
+                shopInfo += `<br><small class="text-info">Compare: ${product.price_comparison}</small>`;
+            }
         } else if (product.shop) {
             const shopName = typeof product.shop === 'object' ? product.shop.name : product.shop;
             shopInfo = `<small class="text-muted">${shopName || 'Unknown Shop'}</small>`;
@@ -559,34 +713,38 @@ class ProductSearchApp {
         const safeTitle = product.title ? product.title.replace(/[<>]/g, '') : 'Untitled Product';
         
         return `
-            <div class="col-md-6 col-lg-4 mb-4">
-                <div class="card h-100 product-card" onclick="app.showProductDetails(${product.id})">
-                    <img src="${imageUrl}" class="card-img-top product-image" alt="${safeTitle}" onerror="this.src='https://via.placeholder.com/200x150?text=No+Image'">
-                    <div class="card-body d-flex flex-column">
-                        <div class="product-meta mb-2">
-                            ${brandName ? `<span class="badge bg-primary me-1">${brandName}</span>` : ''}
-                            ${categoryName ? `<span class="badge bg-secondary">${categoryName}</span>` : ''}
+            <div class="product-card" onclick="app.showProductDetails(${product.id})">
+                <img src="${imageUrl}" class="product-image" alt="${safeTitle}" onerror="this.src='https://via.placeholder.com/200x150?text=No+Image'">
+                <div class="product-content">
+                    <div class="product-meta mb-2">
+                        ${brandName ? `<span class="badge bg-primary me-1">${brandName}</span>` : ''}
+                        ${categoryName ? `<span class="badge bg-secondary">${categoryName}</span>` : ''}
+                    </div>
+                    <h6 class="product-title">${safeTitle}</h6>
+                    <p class="product-description">${product.description ? product.description.substring(0, 100).replace(/[<>]/g, '') + '...' : ''}</p>
+                    <div class="product-footer">
+                        <div class="price-availability">
+                            <div class="price">
+                                <strong class="text-primary">${price}</strong>
+                                ${originalPrice}
+                                ${discount}
+                            </div>
+                            ${availability}
                         </div>
-                        <h6 class="card-title">${safeTitle}</h6>
-                        <p class="card-text text-muted small">${product.description ? product.description.substring(0, 100).replace(/[<>]/g, '') + '...' : ''}</p>
-                        <div class="mt-auto">
-                            <div class="d-flex justify-content-between align-items-center mb-2">
-                                <div class="price">
-                                    <strong class="text-primary">${price}</strong>
-                                    ${originalPrice}
-                                    ${discount}
-                                </div>
-                                ${availability}
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center mb-1">
-                                ${stockInfo}
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center">
-                                ${shopInfo}
-                                <button class="btn btn-sm btn-outline-primary" onclick="event.stopPropagation(); app.showProductDetails(${product.id})">
+                        <div class="stock-info">
+                            ${stockInfo}
+                        </div>
+                        <div class="shop-info">
+                            ${shopInfo}
+                            ${product.shop_count > 1 ? `
+                                <button class="compare-button" onclick="event.stopPropagation(); app.showProductComparison(${product.id})">
+                                    <i class="fas fa-balance-scale"></i> Compare (${product.shop_count})
+                                </button>
+                            ` : `
+                                <button class="view-button" onclick="event.stopPropagation(); app.showProductDetails(${product.id})">
                                     <i class="fas fa-eye"></i>
                                 </button>
-                            </div>
+                            `}
                         </div>
                     </div>
                 </div>
@@ -693,6 +851,98 @@ class ProductSearchApp {
                 });
             }
         }
+
+        // Update brand filters
+        if (facets.brands) {
+            this.updateBrandFilters(facets.brands);
+        }
+
+        // Update category filters
+        if (facets.categories) {
+            this.updateCategoryFilters(facets.categories);
+        }
+    }
+
+    updateBrandFilters(brands) {
+        const brandFiltersContainer = document.getElementById('brandFilters');
+        if (!brandFiltersContainer) return;
+
+        const html = brands.map(brand => `
+            <div class="filter-item">
+                <input type="checkbox" id="brand_${brand.name}" value="${brand.name}" 
+                       ${this.currentFilters.brands && this.currentFilters.brands.includes(brand.name) ? 'checked' : ''}>
+                <label for="brand_${brand.name}">${brand.name}</label>
+                <span class="filter-count">${brand.count}</span>
+            </div>
+        `).join('');
+        
+        brandFiltersContainer.innerHTML = html;
+
+        // Add event listeners
+        brandFiltersContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.handleBrandFilterChange();
+            });
+        });
+    }
+
+    updateCategoryFilters(categories) {
+        const categoryFiltersContainer = document.getElementById('categoryFilters');
+        if (!categoryFiltersContainer) return;
+
+        const html = categories.map(category => `
+            <div class="filter-item">
+                <input type="checkbox" id="category_${category.name}" value="${category.name}" 
+                       ${this.currentFilters.categories && this.currentFilters.categories.includes(category.name) ? 'checked' : ''}>
+                <label for="category_${category.name}">${category.name}</label>
+                <span class="filter-count">${category.count}</span>
+            </div>
+        `).join('');
+        
+        categoryFiltersContainer.innerHTML = html;
+
+        // Add event listeners
+        categoryFiltersContainer.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', () => {
+                this.handleCategoryFilterChange();
+            });
+        });
+    }
+
+    handleBrandFilterChange() {
+        const brandCheckboxes = document.querySelectorAll('#brandFilters input[type="checkbox"]:checked');
+        this.currentFilters.brands = Array.from(brandCheckboxes).map(cb => cb.value);
+        this.updateFilters();
+    }
+
+    handleCategoryFilterChange() {
+        const categoryCheckboxes = document.querySelectorAll('#categoryFilters input[type="checkbox"]:checked');
+        this.currentFilters.categories = Array.from(categoryCheckboxes).map(cb => cb.value);
+        this.updateFilters();
+    }
+
+    filterBrandOptions(searchTerm) {
+        const brandItems = document.querySelectorAll('#brandFilters .filter-item');
+        brandItems.forEach(item => {
+            const label = item.querySelector('label').textContent.toLowerCase();
+            if (label.includes(searchTerm.toLowerCase())) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    filterCategoryOptions(searchTerm) {
+        const categoryItems = document.querySelectorAll('#categoryFilters .filter-item');
+        categoryItems.forEach(item => {
+            const label = item.querySelector('label').textContent.toLowerCase();
+            if (label.includes(searchTerm.toLowerCase())) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
     }
 
 
@@ -726,6 +976,26 @@ class ProductSearchApp {
             });
         }
 
+        if (this.currentFilters.brands && this.currentFilters.brands.length > 0) {
+            this.currentFilters.brands.forEach(brand => {
+                activeFilters.push({
+                    type: 'brand',
+                    value: brand,
+                    label: `Brand: ${brand}`
+                });
+            });
+        }
+
+        if (this.currentFilters.categories && this.currentFilters.categories.length > 0) {
+            this.currentFilters.categories.forEach(category => {
+                activeFilters.push({
+                    type: 'category',
+                    value: category,
+                    label: `Category: ${category}`
+                });
+            });
+        }
+
         const activeFiltersContainer = document.getElementById('activeFilters');
         activeFiltersContainer.innerHTML = activeFilters.map(filter => `
             <div class="filter-tag">
@@ -744,6 +1014,28 @@ class ProductSearchApp {
                 delete this.currentFilters.min_price;
                 delete this.currentFilters.max_price;
                 break;
+            case 'brand':
+                if (this.currentFilters.brands) {
+                    this.currentFilters.brands = this.currentFilters.brands.filter(b => b !== value);
+                    if (this.currentFilters.brands.length === 0) {
+                        delete this.currentFilters.brands;
+                    }
+                }
+                // Update checkbox
+                const brandCheckbox = document.getElementById(`brand_${value}`);
+                if (brandCheckbox) brandCheckbox.checked = false;
+                break;
+            case 'category':
+                if (this.currentFilters.categories) {
+                    this.currentFilters.categories = this.currentFilters.categories.filter(c => c !== value);
+                    if (this.currentFilters.categories.length === 0) {
+                        delete this.currentFilters.categories;
+                    }
+                }
+                // Update checkbox
+                const categoryCheckbox = document.getElementById(`category_${value}`);
+                if (categoryCheckbox) categoryCheckbox.checked = false;
+                break;
         }
 
         this.updateFilters();
@@ -754,6 +1046,14 @@ class ProductSearchApp {
 
         // Reset form elements
         document.querySelectorAll('.filter-option input[type="checkbox"]').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+
+        // Clear brand and category checkboxes
+        document.querySelectorAll('#brandFilters input[type="checkbox"]').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        document.querySelectorAll('#categoryFilters input[type="checkbox"]').forEach(checkbox => {
             checkbox.checked = false;
         });
 
@@ -849,6 +1149,104 @@ class ProductSearchApp {
                     <div class="alert alert-danger">
                         <i class="fas fa-exclamation-circle me-2"></i>
                         Error loading product details: ${error.message}
+                    </div>
+                    <div class="text-center mt-3">
+                        <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    async showProductComparison(productId) {
+        try {
+            console.log('Show product comparison for:', productId);
+
+            // Validate product ID
+            if (!productId || isNaN(productId)) {
+                console.error('Invalid product ID:', productId);
+                this.showError('Invalid product ID');
+                return;
+            }
+
+            // Get modal element
+            const modalElement = document.getElementById('productModal');
+            const modalBody = document.getElementById('productModalBody');
+
+            if (!modalElement || !modalBody) {
+                console.error('Modal elements not found');
+                this.showError('Modal elements not found');
+                return;
+            }
+
+            // Check if modal is already open with the same product
+            if (modalElement.classList.contains('show') && this.currentComparisonProductId === productId) {
+                console.log('Comparison modal already open for this product');
+                return;
+            }
+
+            // Store current comparison product ID
+            this.currentComparisonProductId = productId;
+
+            // Show loading state
+            modalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2">Loading product comparison...</p>
+                </div>
+            `;
+
+            // Show modal with proper Bootstrap handling
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+            
+            // Add event listener for modal close (only once)
+            if (!this.modalCloseListenerAdded) {
+                modalElement.addEventListener('hidden.bs.modal', () => {
+                    this.closeModal();
+                    this.currentComparisonProductId = null;
+                });
+                this.modalCloseListenerAdded = true;
+            }
+
+            // Try to get product comparison from API
+            let comparisonData = null;
+            try {
+                const response = await fetch(`/product/${productId}/comparison`);
+                if (response.ok) {
+                    comparisonData = await response.json();
+                } else {
+                    console.warn(`API returned status ${response.status} for product comparison ${productId}`);
+                }
+            } catch (error) {
+                console.log('API endpoint not available, using search data');
+            }
+
+            // Display product comparison
+            if (comparisonData) {
+                this.displayProductComparisonModal(comparisonData);
+            } else {
+                modalBody.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Product comparison not available. The product may have been removed or the data is temporarily unavailable.
+                    </div>
+                    <div class="text-center mt-3">
+                        <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+                    </div>
+                `;
+            }
+
+        } catch (error) {
+            console.error('Error showing product comparison:', error);
+            const modalBody = document.getElementById('productModalBody');
+            if (modalBody) {
+                modalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        Error loading product comparison: ${error.message}
                     </div>
                     <div class="text-center mt-3">
                         <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
@@ -996,6 +1394,244 @@ class ProductSearchApp {
         `;
     }
 
+    displayProductComparisonModal(comparisonData) {
+        const modalBody = document.getElementById('productModalBody');
+        const modalTitle = document.getElementById('productModalLabel');
+        const modalElement = document.getElementById('productModal');
+
+        if (!modalBody || !modalTitle || !modalElement) {
+            console.error('Modal elements not found');
+            return;
+        }
+
+        // Validate comparison data
+        if (!comparisonData || !comparisonData.products || comparisonData.products.length === 0) {
+            modalBody.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    No comparison data available.
+                </div>
+                <div class="text-center mt-3">
+                    <button class="btn btn-secondary" onclick="app.closeModal()">Close</button>
+                </div>
+            `;
+            return;
+        }
+
+        // Set modal title
+        modalTitle.textContent = `Compare: ${comparisonData.title || 'Product Comparison'}`;
+
+        // Create comparison table layout for better attribute comparison
+        let comparisonHTML = `
+            <div class="product-comparison">
+                <div class="comparison-header mb-3">
+                    <h5 class="text-center">${comparisonData.title || 'Product Comparison'}</h5>
+                    <p class="text-muted text-center">Compare prices and details across ${comparisonData.total_shops || comparisonData.products.length} shops (${comparisonData.available_count || 0} available)</p>
+                </div>
+                
+                <!-- Summary Cards -->
+                <div class="comparison-summary mb-4">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="summary-card text-center p-3 border rounded">
+                                <div class="text-success fw-bold fs-4">€${comparisonData.best_price?.toFixed(2) || '0.00'}</div>
+                                <small class="text-muted">Best Price</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="summary-card text-center p-3 border rounded">
+                                <div class="text-primary fw-bold fs-4">€${comparisonData.min_price?.toFixed(2) || '0.00'}</div>
+                                <small class="text-muted">Lowest Price</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="summary-card text-center p-3 border rounded">
+                                <div class="text-info fw-bold fs-4">€${comparisonData.max_price?.toFixed(2) || '0.00'}</div>
+                                <small class="text-muted">Highest Price</small>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="summary-card text-center p-3 border rounded">
+                                <div class="text-warning fw-bold fs-4">${comparisonData.available_count || 0}</div>
+                                <small class="text-muted">Available in ${comparisonData.total_shops || comparisonData.products.length} shops</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Comparison Table -->
+                <div class="comparison-table-container">
+                    <div class="table-responsive">
+                        <table class="table table-bordered comparison-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 200px;">Attribute</th>
+                                    ${comparisonData.products.map(product => `
+                                        <th class="text-center" style="min-width: 200px;">
+                                            <div class="shop-header">
+                                                <div class="shop-name fw-bold">${product.shop_name}</div>
+                                                ${product.price === comparisonData.best_price ? 
+                                                    '<span class="badge bg-success">Best Price</span>' : ''
+                                                }
+                                            </div>
+                                        </th>
+                                    `).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Product Images -->
+                                <tr>
+                                    <td class="fw-bold">Product Image</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            <img src="${product.image_url || 'https://via.placeholder.com/120x120?text=No+Image'}" 
+                                                 alt="${product.title}" 
+                                                 class="img-fluid rounded"
+                                                 style="max-height: 120px;"
+                                                 onerror="this.src='https://via.placeholder.com/120x120?text=No+Image'">
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Product Title -->
+                                <tr>
+                                    <td class="fw-bold">Product Title</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td>
+                                            <div class="product-title">${product.title}</div>
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Price -->
+                                <tr>
+                                    <td class="fw-bold">Price</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            <div class="price ${product.price === comparisonData.best_price ? 'text-success fw-bold fs-5' : 'text-primary fw-bold'}">
+                                                €${parseFloat(product.price).toFixed(2)}
+                                            </div>
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Availability -->
+                                <tr>
+                                    <td class="fw-bold">Availability</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            ${product.availability ? 
+                                                '<span class="badge bg-success">In Stock</span>' : 
+                                                '<span class="badge bg-danger">Out of Stock</span>'
+                                            }
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Brand -->
+                                <tr>
+                                    <td class="fw-bold">Brand</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            ${product.brand_name || '<span class="text-muted">Not specified</span>'}
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Category -->
+                                <tr>
+                                    <td class="fw-bold">Category</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            ${product.category_name || '<span class="text-muted">Not specified</span>'}
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- EAN -->
+                                <tr>
+                                    <td class="fw-bold">EAN Code</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            ${product.ean || '<span class="text-muted">Not specified</span>'}
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- MPN -->
+                                <tr>
+                                    <td class="fw-bold">MPN</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            ${product.mpn || '<span class="text-muted">Not specified</span>'}
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Description -->
+                                <tr>
+                                    <td class="fw-bold">Description</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td>
+                                            <div class="product-description">
+                                                ${product.description ? 
+                                                    (product.description.length > 150 ? 
+                                                        product.description.substring(0, 150) + '...' : 
+                                                        product.description
+                                                    ) : 
+                                                    '<span class="text-muted">No description available</span>'
+                                                }
+                                            </div>
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Actions -->
+                                <tr>
+                                    <td class="fw-bold">Actions</td>
+                                    ${comparisonData.products.map(product => `
+                                        <td class="text-center">
+                                            <div class="action-buttons">
+                                                <button class="btn btn-primary btn-sm mb-1" onclick="app.showProductDetails(${product.id})">
+                                                    <i class="fas fa-eye"></i> Details
+                                                </button>
+                                                ${product.url ? `
+                                                    <button class="btn btn-outline-success btn-sm mb-1" onclick="window.open('${product.url}', '_blank')">
+                                                        <i class="fas fa-external-link-alt"></i> Visit Shop
+                                                    </button>
+                                                ` : ''}
+                                            </div>
+                                        </td>
+                                    `).join('')}
+                                </tr>
+                                
+                                <!-- Summary Row -->
+                                <tr class="table-info">
+                                    <td class="fw-bold">Summary</td>
+                                    <td colspan="${comparisonData.products.length}" class="text-center">
+                                        <div class="row">
+                                            <div class="col-md-4">
+                                                <strong>Total Shops:</strong> ${comparisonData.total_shops || comparisonData.products.length}
+                                            </div>
+                                            <div class="col-md-4">
+                                                <strong>Available:</strong> ${comparisonData.available_count || 0}
+                                            </div>
+                                            <div class="col-md-4">
+                                                <strong>Price Range:</strong> €${comparisonData.min_price?.toFixed(2) || '0.00'} - €${comparisonData.max_price?.toFixed(2) || '0.00'}
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        modalBody.innerHTML = comparisonHTML;
+    }
+
     closeModal() {
         const modalElement = document.getElementById('productModal');
         
@@ -1059,7 +1695,7 @@ class ProductSearchApp {
     startVoiceInput(searchInput) {
         const voiceBtn = searchInput.id === 'mainSearch' ? 
             document.getElementById('voiceBtn') : 
-            document.getElementById('headerVoiceBtn');
+            document.getElementById('voiceBtnHeader');
 
         if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
             alert('Speech recognition is not supported in this browser.');
@@ -1132,7 +1768,7 @@ class ProductSearchApp {
             // Show loading state
             const imageBtn = searchInput.id === 'mainSearch' ? 
                 document.getElementById('imageBtn') : 
-                document.getElementById('headerImageBtn');
+                document.getElementById('imageBtnHeader');
             
             const originalContent = imageBtn.innerHTML;
             imageBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
@@ -1173,7 +1809,7 @@ class ProductSearchApp {
             // Restore button content
             const imageBtn = searchInput.id === 'mainSearch' ? 
                 document.getElementById('imageBtn') : 
-                document.getElementById('headerImageBtn');
+                document.getElementById('imageBtnHeader');
             imageBtn.innerHTML = '<i class="fas fa-camera"></i>';
         }
     }
