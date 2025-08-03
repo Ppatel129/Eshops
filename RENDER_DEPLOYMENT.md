@@ -88,7 +88,7 @@ The application will automatically handle the SSL parameters and convert it to t
 ## Default Configuration
 
 If no environment variables are set, the application uses these defaults:
-- **Database**: `postgresql://postgres:123123@localhost:5432/postgres`
+- **Database**: `postgresql://postgres:123123@0.0.0.0:5432/postgres`
 - **Host**: `0.0.0.0`
 - **Port**: `8000`
 - **Log Level**: `INFO`

@@ -27,7 +27,7 @@ if database_url:
     logger.info(f"Database URL format: {masked_url}")
 else:
     logger.warning("DATABASE_URL is not set, using default local database")
-    database_url = "postgresql://postgres:123123@localhost:5432/postgres"
+    database_url = "postgresql://postgres:123123@0.0.0.0:5432/postgres"
 
 # Convert to asyncpg format
 if database_url.startswith("postgresql://"):

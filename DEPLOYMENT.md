@@ -81,7 +81,7 @@ nano .env
 Add the following content:
 ```env
 # Database
-DATABASE_URL=postgresql://postgres:your_secure_password@localhost:5432/postgres
+DATABASE_URL=postgresql://postgres:your_secure_password@0.0.0.0:5432/postgres
 
 # API Configuration
 API_HOST=0.0.0.0
@@ -95,7 +95,7 @@ OPENAI_API_KEY=your_openai_api_key
 
 # Elasticsearch (optional - set to false if not using)
 ELASTICSEARCH_ENABLED=false
-ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_HOST=0.0.0.0
 ELASTICSEARCH_PORT=9200
 ELASTICSEARCH_USERNAME=
 ELASTICSEARCH_PASSWORD=
@@ -274,7 +274,7 @@ sudo nano /etc/elasticsearch/elasticsearch.yml
 
 Add/modify these settings:
 ```yaml
-network.host: localhost
+network.host: 0.0.0.0
 http.port: 9200
 discovery.type: single-node
 xpack.security.enabled: false
@@ -295,7 +295,7 @@ nano .env
 Set Elasticsearch to enabled:
 ```env
 ELASTICSEARCH_ENABLED=true
-ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_HOST=0.0.0.0
 ELASTICSEARCH_PORT=9200
 ```
 
@@ -329,7 +329,7 @@ DATE=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/backup_$DATE.sql"
 
 mkdir -p $BACKUP_DIR
-pg_dump -h localhost -U postgres postgres > $BACKUP_FILE
+pg_dump -h 0.0.0.0 -U postgres postgres > $BACKUP_FILE
 gzip $BACKUP_FILE
 
 # Keep only last 7 days of backups
@@ -380,7 +380,7 @@ print('Database connection successful')
 
 ### Test API endpoints
 ```bash
-curl http://localhost:8000/health
+curl http://0.0.0.0:8000/health
 curl http://your-domain.com/health
 ```
 

@@ -51,7 +51,7 @@ async def test_elasticsearch():
                 return False
         else:
             print("❌ Elasticsearch connection failed")
-            print("   Make sure Elasticsearch is running on localhost:9200")
+            print("   Make sure Elasticsearch is running on 0.0.0.0:9200")
             return False
             
     except ImportError as e:

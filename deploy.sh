@@ -80,7 +80,7 @@ if [ ! -f ".env" ]; then
     print_status "Creating .env file..."
     cat > .env << EOF
 # Database
-DATABASE_URL=postgresql://postgres:123123@localhost:5432/postgres
+DATABASE_URL=postgresql://postgres:123123@0.0.0.0:5432/postgres
 
 # API Configuration
 API_HOST=0.0.0.0
@@ -94,7 +94,7 @@ OPENAI_API_KEY=
 
 # Elasticsearch (optional - set to false if not using)
 ELASTICSEARCH_ENABLED=false
-ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_HOST=0.0.0.0
 ELASTICSEARCH_PORT=9200
 ELASTICSEARCH_USERNAME=
 ELASTICSEARCH_PASSWORD=
@@ -227,7 +227,7 @@ sleep 5
 
 # Test the application
 print_status "Testing application..."
-if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+if curl -f http://0.0.0.0:8000/health > /dev/null 2>&1; then
     print_status "Application is running successfully!"
     echo -e "${GREEN}================================${NC}"
     echo -e "${GREEN}  Deployment Complete!${NC}"

@@ -30,7 +30,7 @@ if [ ! -f ".env" ]; then
     echo -e "${YELLOW}Creating .env file from template...${NC}"
     cat > .env << EOF
 # Database
-DATABASE_URL=postgresql://postgres:123123@localhost:5432/postgres
+DATABASE_URL=postgresql://postgres:123123@0.0.0.0:5432/postgres
 
 # API Configuration
 API_HOST=0.0.0.0
@@ -44,7 +44,7 @@ OPENAI_API_KEY=
 
 # Elasticsearch (optional - set to false if not using)
 ELASTICSEARCH_ENABLED=false
-ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_HOST=0.0.0.0
 ELASTICSEARCH_PORT=9200
 ELASTICSEARCH_USERNAME=
 ELASTICSEARCH_PASSWORD=
@@ -95,7 +95,7 @@ fi
 
 # Start the application
 echo -e "${GREEN}Starting FastAPI application...${NC}"
-echo -e "${GREEN}API will be available at: http://localhost:8000${NC}"
+echo -e "${GREEN}API will be available at: http://0.0.0.0:8000${NC}"
 echo -e "${GREEN}Press Ctrl+C to stop${NC}"
 
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload 

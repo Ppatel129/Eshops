@@ -55,10 +55,10 @@ A scalable product search system with XML feed processing, built with FastAPI, P
    ```
 
 6. **Access the application**
-   - Main interface: http://localhost:8000
-   - Admin panel: http://localhost:8000/admin
-   - API docs: http://localhost:8000/docs
-   - Health check: http://localhost:8000/health
+   - Main interface: http://0.0.0.0:8000
+   - Admin panel: http://0.0.0.0:8000/admin
+   - API docs: http://0.0.0.0:8000/docs
+   - Health check: http://0.0.0.0:8000/health
 
 ## Cloud Deployment
 
@@ -97,7 +97,7 @@ Create a `.env` file in the project root:
 
 ```env
 # Database
-DATABASE_URL=postgresql://postgres:123123@localhost:5432/postgres
+DATABASE_URL=postgresql://postgres:123123@0.0.0.0:5432/postgres
 
 # API Configuration
 API_HOST=0.0.0.0
@@ -111,7 +111,7 @@ OPENAI_API_KEY=your_openai_api_key
 
 # Elasticsearch (optional)
 ELASTICSEARCH_ENABLED=false
-ELASTICSEARCH_HOST=localhost
+ELASTICSEARCH_HOST=0.0.0.0
 ELASTICSEARCH_PORT=9200
 ELASTICSEARCH_USERNAME=
 ELASTICSEARCH_PASSWORD=
@@ -137,7 +137,7 @@ If you want enhanced search capabilities:
    ```
    Add:
    ```yaml
-   network.host: localhost
+   network.host: 0.0.0.0
    http.port: 9200
    discovery.type: single-node
    xpack.security.enabled: false
@@ -218,7 +218,7 @@ sudo systemctl stop eshops
 ### Database Backup
 ```bash
 # Manual backup
-pg_dump -h localhost -U postgres postgres > backup.sql
+pg_dump -h 0.0.0.0 -U postgres postgres > backup.sql
 
 # Automated backup (cron job)
 0 2 * * * /opt/eshops/backup.sh
