@@ -295,8 +295,9 @@ class SearchService:
 
             # Always include original title search as a fallback
             if filters.title:
-                conditions.append("LOWER(p.title) ILIKE :title")
+                conditions.append("LOWER(p.title) ILIKE :title OR p.title % :title_similar")
                 params["title"] = f"%{filters.title.lower()}%"
+                params["title_similar"] = filters.title
 
             if filters.brand:
                 conditions.append("LOWER(b.name) = :brand")
@@ -344,78 +345,185 @@ class SearchService:
                 conditions.append("s.name = ANY(:shops)")
                 params["shops"] = filters.shops
 
-            # Fall back to simple search for Render.com compatibility
-            logger.info("Using simplified search approach for Render.com compatibility")
-            
-            # Use the simpler search_products method instead
-            simple_results = await self.search_products(filters, page, per_page)
-            
-            # Convert the simple results to the aggregated format
+            # Main query with improved product grouping and duplicate handling
+            query = text(f"""
+                WITH product_groups AS (
+                    SELECT 
+                        CASE 
+                            WHEN p.ean IS NOT NULL AND p.ean != '' THEN p.ean
+                            WHEN p.mpn IS NOT NULL AND p.mpn != '' THEN p.mpn
+                            ELSE LOWER(REGEXP_REPLACE(p.title, '[^a-zA-Z0-9\s]', '', 'g'))
+                        END as group_key,
+                        -- Use the most common title for the group
+                        MODE() WITHIN GROUP (ORDER BY p.title) as title,
+                        -- Use the most common description for the group
+                        MODE() WITHIN GROUP (ORDER BY p.description) as description,
+                        -- Use the first image_url for the group
+                        (ARRAY_AGG(p.image_url ORDER BY p.id))[1] as image_url,
+                        p.brand_id,
+                        p.category_id,
+                        MIN(p.price) as min_price,
+                        MAX(p.price) as max_price,
+                        AVG(p.price) as avg_price,
+                        COUNT(DISTINCT p.shop_id) as shop_count,
+                        BOOL_OR(p.availability) as any_available,
+                        COUNT(CASE WHEN p.availability = true THEN 1 END) as available_shops,
+                        MIN(CASE WHEN p.availability = true THEN p.price END) as best_available_price,
+                        ARRAY_AGG(DISTINCT s.name ORDER BY s.name) as shop_names,
+                        ARRAY_AGG(DISTINCT p.id ORDER BY p.id) as product_ids,
+                        ARRAY_AGG(DISTINCT p.price ORDER BY p.price) as all_prices,
+                        MAX(p.updated_at) as last_updated,
+                        STRING_AGG(DISTINCT s.name, ' vs ') as price_comparison,
+                        -- Enhanced duplicate detection
+                        COUNT(DISTINCT p.title) as title_variations,
+                        COUNT(DISTINCT p.ean) FILTER (WHERE p.ean IS NOT NULL) as ean_count,
+                        COUNT(DISTINCT p.mpn) FILTER (WHERE p.mpn IS NOT NULL) as mpn_count
+                    FROM products p
+                    JOIN shops s ON p.shop_id = s.id
+                    LEFT JOIN brands b ON p.brand_id = b.id
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE {" AND ".join(conditions)}
+                    GROUP BY 
+                        CASE 
+                            WHEN p.ean IS NOT NULL AND p.ean != '' THEN p.ean
+                            WHEN p.mpn IS NOT NULL AND p.mpn != '' THEN p.mpn
+                            ELSE LOWER(REGEXP_REPLACE(p.title, '[^a-zA-Z0-9\s]', '', 'g'))
+                        END,
+                        p.brand_id, p.category_id
+                    HAVING COUNT(*) > 0
+                ),
+                relevance_scored AS (
+                    SELECT *,
+                        -- Word match scoring
+                        CASE 
+                            WHEN LOWER(title) LIKE :exact_phrase THEN 100  -- Exact phrase match
+                            WHEN LOWER(title) LIKE :start_phrase THEN 80   -- Starts with phrase
+                            ELSE (
+                                -- Count matching words
+                                (CASE WHEN LOWER(title) LIKE :word1 THEN 1 ELSE 0 END +
+                                 CASE WHEN LOWER(title) LIKE :word2 THEN 1 ELSE 0 END +
+                                 CASE WHEN LOWER(title) LIKE :word3 THEN 1 ELSE 0 END +
+                                 CASE WHEN LOWER(title) LIKE :word4 THEN 1 ELSE 0 END +
+                                 CASE WHEN LOWER(title) LIKE :word5 THEN 1 ELSE 0 END) * 20
+                            )
+                        END as word_match_score,
+                        -- Word order bonus (words appearing in sequence)
+                        CASE 
+                            WHEN LOWER(title) LIKE :word_order_1 THEN 30
+                            WHEN LOWER(title) LIKE :word_order_2 THEN 20
+                            WHEN LOWER(title) LIKE :word_order_3 THEN 10
+                            ELSE 0
+                        END as word_order_score,
+                        -- Title position bonus (matches at beginning get higher score)
+                        CASE 
+                            WHEN LOWER(title) LIKE :start_word1 THEN 15
+                            WHEN LOWER(title) LIKE :start_word2 THEN 10
+                            WHEN LOWER(title) LIKE :start_word3 THEN 5
+                            ELSE 0
+                        END as position_score
+                    FROM product_groups
+                )
+                SELECT * FROM relevance_scored
+                ORDER BY 
+                    CASE WHEN :sort = 'price_asc' THEN min_price END ASC,
+                    CASE WHEN :sort = 'price_desc' THEN min_price END DESC,
+                    CASE WHEN :sort = 'availability' THEN any_available END DESC,
+                    CASE WHEN :sort = 'newest' THEN last_updated END DESC,
+                    -- Enhanced relevance scoring with word matching
+                    CASE WHEN :sort = 'relevance' THEN 
+                        (word_match_score + word_order_score + position_score) 
+                    END DESC,
+                    (available_shops::float / NULLIF(shop_count, 0)) DESC,
+                    min_price ASC,
+                    shop_count DESC
+                LIMIT :limit OFFSET :offset
+            """)
+
+            result = await self.db.execute(query, params)
+            product_groups = result.fetchall()
+
             aggregated_products = []
-            for product in simple_results.products:
-                # Get brand and category info
+            for group in product_groups:
+                # Get brand info
                 brand_info = None
-                if product.brand_id:
-                    brand_result = await self.db.execute(select(Brand).where(Brand.id == product.brand_id))
+                if group.brand_id:
+                    brand_result = await self.db.execute(select(Brand).where(Brand.id == group.brand_id))
                     brand_info = brand_result.scalar_one_or_none()
-                
+
+                # Get category info
                 category_info = None
-                if product.category_id:
-                    category_result = await self.db.execute(select(Category).where(Category.id == product.category_id))
+                if group.category_id:
+                    category_result = await self.db.execute(select(Category).where(Category.id == group.category_id))
                     category_info = category_result.scalar_one_or_none()
-                
-                # Create aggregated product format
+
+                # Enhanced duplicate product handling
+                duplicate_info = {
+                    "is_duplicate": group.shop_count > 1,
+                    "duplicate_type": "ean" if hasattr(group, 'ean_count') and group.ean_count > 1 else "title",
+                    "title_variations": getattr(group, 'title_variations', 1),
+                    "price_variations": len(getattr(group, 'all_prices', [])),
+                    "grouped_products": group.shop_count,
+                    "price_range": f"€{group.min_price:.2f} - €{group.max_price:.2f}" if group.min_price != group.max_price else f"€{group.min_price:.2f}",
+                    "best_deal": group.best_available_price == group.min_price
+                }
+
                 aggregated_products.append({
-                    "id": product.id,
-                    "title": product.title,
-                    "description": product.description,
-                    "image_url": product.image_url,
-                    "min_price": float(product.price) if product.price else None,
-                    "max_price": float(product.price) if product.price else None,
-                    "avg_price": float(product.price) if product.price else None,
-                    "best_available_price": float(product.price) if product.price and product.availability else None,
-                    "shop_count": 1,
-                    "available_shops": 1 if product.availability else 0,
-                    "shop_names": ["Unknown"],
-                    "availability": product.availability,
-                    "price_comparison": "Single price",
-                    "all_prices": [float(product.price)] if product.price else [],
-                    "duplicate_info": {
-                        "is_duplicate": False,
-                        "duplicate_type": "none",
-                        "title_variations": 1,
-                        "price_variations": 1,
-                        "grouped_products": 1,
-                        "price_range": f"€{product.price:.2f}" if product.price else "€0.00",
-                        "best_deal": True
-                    },
+                    "id": group.product_ids[0] if group.product_ids else 0,
+                    "title": group.title,
+                    "description": group.description,
+                    "image_url": group.image_url,
+                    "min_price": float(group.min_price) if group.min_price else None,
+                    "max_price": float(group.max_price) if group.max_price else None,
+                    "avg_price": float(group.avg_price) if group.avg_price else None,
+                    "best_available_price": float(group.best_available_price) if group.best_available_price else None,
+                    "shop_count": group.shop_count,
+                    "available_shops": group.available_shops,
+                    "shop_names": list(group.shop_names),
+                    "availability": group.any_available,
+                    "price_comparison": group.price_comparison if hasattr(group, 'price_comparison') else None,
+                    "all_prices": list(getattr(group, 'all_prices', [])),
+                    "duplicate_info": duplicate_info,
                     "availability_info": {
-                        "available_in_shops": 1 if product.availability else 0,
-                        "total_shops": 1,
-                        "estimated_delivery": "1-3 days" if product.availability else "3-7 days",
-                        "price_savings": 0
+                        "available_in_shops": group.available_shops,
+                        "total_shops": group.shop_count,
+                        "estimated_delivery": "1-3 days" if group.any_available else "3-7 days",
+                        "price_savings": float(group.max_price - group.min_price) if group.max_price and group.min_price else 0
                     },
                     "brand": {"name": brand_info.name} if brand_info else None,
                     "category": {"name": category_info.name} if category_info else None,
-                    "last_updated": product.updated_at,
-                    "product_ids": [product.id],
+                    "last_updated": group.last_updated,
+                    "product_ids": list(group.product_ids),
                     "search_relevance": {
                         "ai_processed": True,
                         "confidence": query_analysis.get('confidence', 0.7),
-                        "word_match_score": 50,  # Default score
-                        "word_order_score": 0,
-                        "position_score": 0,
-                        "total_relevance_score": 50
+                        "word_match_score": getattr(group, 'word_match_score', 0),
+                        "word_order_score": getattr(group, 'word_order_score', 0),
+                        "position_score": getattr(group, 'position_score', 0),
+                        "total_relevance_score": getattr(group, 'word_match_score', 0) + getattr(group, 'word_order_score', 0) + getattr(group, 'position_score', 0)
                     }
                 })
-            
-            # Use the total from simple results
-            total = simple_results.total
-            total_pages = simple_results.total_pages
 
+            # Total count
+            if filters.shops:
+                count_query = text(f"""
+                    SELECT COUNT(DISTINCT COALESCE(p.ean, p.title))
+                    FROM products p
+                    JOIN shops s ON p.shop_id = s.id
+                    LEFT JOIN brands b ON p.brand_id = b.id
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE {" AND ".join(conditions)}
+                """)
+            else:
+                count_query = text(f"""
+                    SELECT COUNT(DISTINCT COALESCE(p.ean, p.title))
+                    FROM products p
+                    LEFT JOIN brands b ON p.brand_id = b.id
+                    LEFT JOIN categories c ON p.category_id = c.id
+                    WHERE {" AND ".join(conditions)}
+                """)
 
-
-
+            count_result = await self.db.execute(count_query, params)
+            total = count_result.scalar() or 0
 
             execution_time = (time.time() - start_time) * 1000
             total_pages = (total + per_page - 1) // per_page
@@ -854,16 +962,17 @@ class SearchService:
                     LEFT JOIN brands b ON p.brand_id = b.id
                     LEFT JOIN categories c ON p.category_id = c.id
                     WHERE (
-                        -- Title similarity using ILIKE
-                        LOWER(p.title) ILIKE LOWER(:title)
+                        -- Very high similarity threshold (0.8+)
+                        (p.title % :title AND similarity(p.title, :title) > 0.8)
                         OR
-                        -- Same brand and similar title
-                        (b.name = :brand_name AND LOWER(p.title) ILIKE LOWER(:title))
+                        -- Same brand and very similar title
+                        (b.name = :brand_name AND similarity(p.title, :title) > 0.7)
                     )
                     AND (p.price IS NOT NULL OR p.availability = true)
                     AND p.id != :product_id
                     ORDER BY 
                         s.name,
+                        similarity(p.title, :title) DESC, 
                         p.price ASC, 
                         p.availability DESC
                     LIMIT 5
