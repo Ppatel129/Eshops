@@ -265,20 +265,24 @@ class SearchService:
                 **relevance_params
             }
 
-            # Build search conditions based on AI analysis
+            # Build search conditions based on AI analysis (make them optional)
             if query_analysis['components']['brands']:
                 brand_conditions = []
                 for brand in query_analysis['components']['brands']:
                     brand_conditions.append(f"LOWER(b.name) LIKE '%{brand.lower()}%'")
                 if brand_conditions:
-                    conditions.append(f"({' OR '.join(brand_conditions)})")
+                    # Make brand conditions optional by using OR with title search
+                    brand_or_title = f"({' OR '.join(brand_conditions)}) OR LOWER(p.title) LIKE '%{filters.title.lower()}%'"
+                    conditions.append(f"({brand_or_title})")
 
             if query_analysis['components']['categories']:
                 category_conditions = []
                 for category in query_analysis['components']['categories']:
                     category_conditions.append(f"LOWER(c.name) LIKE '%{category.lower()}%'")
                 if category_conditions:
-                    conditions.append(f"({' OR '.join(category_conditions)})")
+                    # Make category conditions optional by using OR with title search
+                    category_or_title = f"({' OR '.join(category_conditions)}) OR LOWER(p.title) LIKE '%{filters.title.lower()}%'"
+                    conditions.append(f"({category_or_title})")
 
             # Add product terms to title search with fuzzy matching
             if query_analysis['components']['product_terms']:
@@ -289,8 +293,8 @@ class SearchService:
                 if product_conditions:
                     conditions.append(f"({' OR '.join(product_conditions)})")
 
-            # Fallback to original title search if no AI components found
-            if filters.title and not query_analysis['components']['brands'] and not query_analysis['components']['categories'] and not query_analysis['components']['product_terms']:
+            # Always include original title search as a fallback
+            if filters.title:
                 conditions.append("LOWER(p.title) ILIKE :title OR p.title % :title_similar")
                 params["title"] = f"%{filters.title.lower()}%"
                 params["title_similar"] = filters.title
@@ -308,8 +312,11 @@ class SearchService:
                 params["category"] = filters.category.lower()
 
             if filters.categories:
-                conditions.append("c.name = ANY(:categories)")
-                params["categories"] = filters.categories
+                # Filter out empty categories
+                valid_categories = [cat for cat in filters.categories if cat and cat.strip()]
+                if valid_categories:
+                    conditions.append("c.name = ANY(:categories)")
+                    params["categories"] = valid_categories
 
             # Optimize price filtering
             if filters.min_price is not None:
@@ -521,6 +528,16 @@ class SearchService:
             execution_time = (time.time() - start_time) * 1000
             total_pages = (total + per_page - 1) // per_page
 
+            # Get category distribution for the current search results (optional and fast)
+            category_distribution = []
+            # Only get categories for meaningful searches (not empty or too short)
+            if filters.title and len(filters.title.strip()) >= 2:
+                try:
+                    category_distribution = await self.get_category_distribution(filters, limit=10)
+                except Exception as e:
+                    logger.warning(f"Failed to get category distribution: {e}")
+                    # Continue without category distribution
+
             return {
                 "products": aggregated_products,
                 "total": total,
@@ -528,7 +545,8 @@ class SearchService:
                 "per_page": per_page,
                 "total_pages": total_pages,
                 "execution_time_ms": round(execution_time, 2),
-                "search_type": "aggregated"
+                "search_type": "aggregated",
+                "category_distribution": category_distribution
             }
 
         except Exception as e:
@@ -584,6 +602,13 @@ class SearchService:
             if filters.category:
                 query = query.outerjoin(Category).where(Category.name.ilike(f"%{filters.category}%"))
                 logger.info(f"Applied category filter: {filters.category}")
+            
+            if filters.categories:
+                # Filter out empty categories
+                valid_categories = [cat for cat in filters.categories if cat and cat.strip()]
+                if valid_categories:
+                    query = query.outerjoin(Category).where(Category.name.in_(valid_categories))
+                    logger.info(f"Applied categories filter: {valid_categories}")
             
             if filters.min_price is not None:
                 query = query.where(Product.price >= filters.min_price)
@@ -685,6 +710,16 @@ class SearchService:
             total_count = count_result.scalar()
             logger.info(f"Total count for query: {total_count}")
             
+            # Get category distribution for the current search results (optional and fast)
+            category_distribution = []
+            # Only get categories for meaningful searches (not empty or too short)
+            if filters.title and len(filters.title.strip()) >= 2:
+                try:
+                    category_distribution = await self.get_category_distribution(filters, limit=10)
+                except Exception as e:
+                    logger.warning(f"Failed to get category distribution: {e}")
+                    # Continue without category distribution
+            
             return SearchResponse(
                 products=product_schemas,
                 total=total_count,
@@ -692,7 +727,8 @@ class SearchService:
                 per_page=per_page,
                 total_pages=(total_count + per_page - 1) // per_page,
                 filters_applied={},
-                execution_time_ms=0.0
+                execution_time_ms=0.0,
+                category_distribution=category_distribution
             )
             
         except Exception as e:
@@ -1251,3 +1287,154 @@ class SearchService:
         except Exception as e:
             logger.error(f"Error searching categories: {e}")
             return []
+
+    async def get_category_distribution(self, filters: SearchFilters, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get category distribution for current search results - SIMPLIFIED VERSION"""
+        try:
+            # Only get categories if we have a search query
+            if not filters.title or len(filters.title.strip()) < 2:
+                return []
+            
+            # Fast query: get categories with product counts and representative images from matching products
+            query = text("""
+                WITH category_counts AS (
+                    SELECT 
+                        c.id,
+                        c.name,
+                        COUNT(p.id) as count
+                    FROM categories c
+                    JOIN products p ON p.category_id = c.id
+                    WHERE c.id IS NOT NULL 
+                    AND LOWER(p.title) LIKE LOWER(:search_term)
+                    GROUP BY c.id, c.name
+                ),
+                category_images AS (
+                    SELECT DISTINCT ON (category_id) 
+                        category_id,
+                        image_url
+                    FROM products 
+                    WHERE image_url IS NOT NULL 
+                    AND image_url != '' 
+                    AND image_url != 'N/A' 
+                    AND image_url != 'null'
+                    AND LOWER(title) LIKE LOWER(:search_term)
+                    AND category_id IN (SELECT id FROM category_counts)
+                    ORDER BY category_id, id
+                )
+                SELECT 
+                    cc.id,
+                    cc.name,
+                    cc.count,
+                    ci.image_url as representative_image
+                FROM category_counts cc
+                LEFT JOIN category_images ci ON cc.id = ci.category_id
+                ORDER BY cc.count DESC
+                LIMIT :limit
+            """)
+            
+            result = await self.db.execute(query, {
+                'search_term': f'%{filters.title}%',
+                'limit': limit
+            })
+            
+            categories = []
+            for row in result:
+                category_id, category_name, count, representative_image = row
+                if count > 0:  # Only include categories with products
+                    category_name_en = self._translate_category_name(category_name)
+                    categories.append({
+                        'category_id': category_id,
+                        'category_name': category_name,
+                        'category_name_en': category_name_en,
+                        'count': count,
+                        'percentage': 0,  # Simplified - no percentage calculation
+                        'representative_image': representative_image
+                    })
+            
+            return categories
+            
+        except Exception as e:
+            logger.warning(f"Error getting category distribution: {e}")
+            return []
+
+    def _translate_category_name(self, category_name: str) -> str:
+        """Translate category name to English (simple mapping)"""
+        # Greek to English category translations
+        translations = {
+            # Electronics
+            'Ηλεκτρονικά': 'Electronics',
+            'Κινητά Τηλέφωνα': 'Mobile Phones',
+            'Smartphones': 'Smartphones',
+            'Τηλέφωνα': 'Phones',
+            'Υπολογιστές': 'Computers',
+            'Laptops': 'Laptops',
+            'Tablets': 'Tablets',
+            'Τηλεοράσεις': 'TVs',
+            'Οθόνες': 'Monitors',
+            'Ακουστικά': 'Headphones',
+            'Ηχεία': 'Speakers',
+            'Κάμερες': 'Cameras',
+            'Φωτογραφικές Μηχανές': 'Cameras',
+            
+            # Fashion
+            'Ρούχα': 'Clothing',
+            'Παπούτσια': 'Shoes',
+            'Αθλητικά': 'Sports',
+            'Άθληση': 'Sports',
+            'Μόδα': 'Fashion',
+            'Accessories': 'Accessories',
+            'Αξεσουάρ': 'Accessories',
+            
+            # Home & Garden
+            'Σπίτι': 'Home',
+            'Κήπος': 'Garden',
+            'Κουζίνα': 'Kitchen',
+            'Μπάνιο': 'Bathroom',
+            'Έπιπλα': 'Furniture',
+            
+            # Books & Media
+            'Βιβλία': 'Books',
+            'Βιβλιοθήκη': 'Books',
+            'Ταινίες': 'Movies',
+            'Μουσική': 'Music',
+            'Games': 'Games',
+            'Παιχνίδια': 'Games',
+            
+            # Health & Beauty
+            'Υγεία': 'Health',
+            'Ομορφιά': 'Beauty',
+            'Καλλυντικά': 'Cosmetics',
+            'Φάρμακα': 'Medicine',
+            
+            # Automotive
+            'Αυτοκίνητα': 'Automotive',
+            'Αυτοκινητικά': 'Automotive',
+            'Μοτοσυκλέτες': 'Motorcycles',
+            
+            # Tools & DIY
+            'Εργαλεία': 'Tools',
+            'DIY': 'DIY',
+            'Κατασκευές': 'DIY',
+            
+            # Toys & Kids
+            'Παιχνίδια': 'Toys',
+            'Παιδικά': 'Kids',
+            'Μωρά': 'Babies',
+            
+            # Food & Beverages
+            'Τρόφιμα': 'Food',
+            'Ροφήματα': 'Beverages',
+            'Καφέ': 'Coffee',
+            'Τσάι': 'Tea',
+            
+            # Office & Business
+            'Γραφείο': 'Office',
+            'Επιχειρήσεις': 'Business',
+            'Εκτύπωση': 'Printing',
+            
+            # Default fallbacks
+            'Άλλα': 'Others',
+            'Διάφορα': 'Miscellaneous'
+        }
+        
+        return translations.get(category_name, category_name)

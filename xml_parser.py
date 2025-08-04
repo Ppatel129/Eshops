@@ -2,17 +2,58 @@ import asyncio
 import aiohttp
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from urllib.parse import urljoin, urlparse
 import re
+import hashlib
+import os
 
 logger = logging.getLogger(__name__)
 
 class XMLFeedParser:
-    def __init__(self, timeout: int = 300):
+    def __init__(self, timeout: int = 300, cache_dir: str = "cache"):
         self.timeout = timeout
         self.session = None
+        self.cache_dir = cache_dir
+        self.cache_duration = timedelta(hours=1)  # Cache for 1 hour
+        
+        # Create cache directory if it doesn't exist
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+    
+    def _get_cache_path(self, url: str) -> str:
+        """Get cache file path for URL"""
+        url_hash = hashlib.md5(url.encode()).hexdigest()
+        return os.path.join(self.cache_dir, f"{url_hash}.xml")
+    
+    def _is_cache_valid(self, cache_path: str) -> bool:
+        """Check if cache file is still valid"""
+        if not os.path.exists(cache_path):
+            return False
+        
+        file_time = datetime.fromtimestamp(os.path.getmtime(cache_path))
+        return datetime.now() - file_time < self.cache_duration
+    
+    def _save_to_cache(self, url: str, content: str):
+        """Save content to cache"""
+        cache_path = self._get_cache_path(url)
+        try:
+            with open(cache_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception as e:
+            logger.warning(f"Failed to save to cache: {e}")
+    
+    def _load_from_cache(self, url: str) -> Optional[str]:
+        """Load content from cache"""
+        cache_path = self._get_cache_path(url)
+        if self._is_cache_valid(cache_path):
+            try:
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"Failed to load from cache: {e}")
+        return None
     
     async def __aenter__(self):
         self.session = aiohttp.ClientSession(
@@ -31,13 +72,21 @@ class XMLFeedParser:
             if self.session is None:
                 logger.error("Session is not initialized")
                 return None
+            
+            # Check cache first
+            cached_content = self._load_from_cache(url)
+            if cached_content:
+                logger.info(f"Serving content from cache for {url}")
+                return cached_content
+
             async with self.session.get(url) as response:
                 if response.status == 200:
                     content = await response.text()
-                    logger.info(f"Successfully fetched XML content ({len(content)} chars)")
+                    logger.info(f"Successfully fetched XML content ({len(content)} chars) from {url}")
+                    self._save_to_cache(url, content) # Save to cache after successful fetch
                     return content
                 else:
-                    logger.error(f"Failed to fetch XML: HTTP {response.status}")
+                    logger.error(f"Failed to fetch XML: HTTP {response.status} for {url}")
                     return None
         except Exception as e:
             logger.error(f"Error fetching XML from {url}: {e}")
@@ -142,16 +191,16 @@ class XMLFeedParser:
         try:
             # Common field mappings for Skroutz XML
             field_mappings = {
-                'title': ['name', 'title', 'product_name'],
-                'description': ['description', 'summary'],
-                'ean': ['ean', 'barcode'],
-                'mpn': ['mpn', 'model', 'part_number'],
-                'sku': ['sku', 'id', 'product_id', 'uid'],
+                'title': ['title', 'name', 'product_name'],
+                'description': ['description', 'desc', 'short_description'],
+                'ean': ['ean', 'ean13', 'barcode'],
+                'mpn': ['mpn', 'manufacturer_part_number', 'part_number'],
+                'sku': ['sku', 'product_code', 'code'],
                 'price': ['price_with_vat', 'price', 'final_price', 'selling_price'],
                 'price_without_vat': ['price_without_vat', 'price_no_vat', 'net_price'],
                 'original_price': ['original_price', 'list_price'],
-                'availability': ['instock', 'availability', 'in_stock', 'stock'],
-                'stock_quantity': ['quantity', 'stock_quantity'],
+                'availability': ['instock', 'availability', 'in_stock', 'stock', 'available', 'status'],
+                'stock_quantity': ['quantity', 'stock_quantity', 'stock_qty', 'qty', 'inventory', 'stock_level'],
                 'image_url': ['image', 'image_url', 'main_image'],
                 'product_url': ['link', 'url', 'product_url'],
                 'brand': ['manufacturer', 'brand'],
@@ -193,19 +242,49 @@ class XMLFeedParser:
             if price is not None and original_price is not None and original_price > price:
                 product_data['discount_percentage'] = round(((original_price - price) / original_price) * 100, 2)
             
-            # Process availability
+            # Process availability with better logic
             if 'availability' in product_data:
                 avail_text = str(product_data['availability']).lower()
-                # Handle various availability formats
-                product_data['availability'] = avail_text in ['true', '1', 'yes', 'y', 'available', 'in stock', 'διαθέσιμο']
+                # Only log if there's an unusual value
+                if avail_text not in ['true', '1', 'yes', 'y', 'available', 'in stock', 'διαθέσιμο', 'false', '0', 'no', 'n', 'unavailable', 'out of stock']:
+                    logger.debug(f"Unusual availability value: '{product_data['availability']}' -> '{avail_text}'")
+                # Handle various availability formats including Greek text
+                product_data['availability'] = avail_text in [
+                    'true', '1', 'yes', 'y', 'available', 'in stock', 'διαθέσιμο', 
+                    'disponible', 'en stock', 'auf lager', 'disponibile'
+                ]
             else:
-                product_data['availability'] = False
-            
-            # Process stock quantity
+                # Only log if we can't find availability data
+                logger.debug(f"No availability field found for product: {product_data.get('title', 'Unknown')[:30]}...")
+                # Try to infer availability from stock quantity if available
+                if 'stock_quantity' in product_data and product_data['stock_quantity'] is not None:
+                    try:
+                        stock_qty = int(product_data['stock_quantity'])
+                        product_data['availability'] = stock_qty > 0
+                    except (ValueError, TypeError):
+                        product_data['availability'] = False
+                else:
+                    product_data['availability'] = False
+
+            # Process stock quantity with better handling
             if 'stock_quantity' in product_data:
                 try:
-                    product_data['stock_quantity'] = int(product_data['stock_quantity'])
-                except ValueError:
+                    stock_qty = int(product_data['stock_quantity'])
+                    product_data['stock_quantity'] = stock_qty if stock_qty >= 0 else None
+                except (ValueError, TypeError):
+                    # Try to extract number from text like "5 in stock", "available", etc.
+                    stock_text = str(product_data['stock_quantity']).lower()
+                    if any(word in stock_text for word in ['available', 'in stock', 'διαθέσιμο', 'disponible']):
+                        product_data['stock_quantity'] = 1  # Assume at least 1 if available
+                    else:
+                        product_data['stock_quantity'] = None
+                        # Only log if we can't parse the stock quantity
+                        logger.debug(f"Could not parse stock quantity: '{product_data['stock_quantity']}'")
+            else:
+                # If no stock quantity but availability is true, assume at least 1
+                if product_data.get('availability', False):
+                    product_data['stock_quantity'] = 1
+                else:
                     product_data['stock_quantity'] = None
             
             # Process images

@@ -138,6 +138,15 @@ class SearchFilters(BaseModel):
             raise ValueError('Price must be non-negative')
         return v
 
+class CategoryDistribution(BaseModel):
+    """Schema for category distribution data"""
+    category_id: int
+    category_name: str
+    category_name_en: Optional[str] = None  # English translation
+    count: int
+    percentage: float
+    representative_image: Optional[str] = None  # Representative product image URL
+
 class SearchResponse(BaseModel):
     products: List[Product]
     total: int
@@ -147,6 +156,7 @@ class SearchResponse(BaseModel):
     filters_applied: Dict[str, Any]
     execution_time_ms: float
     facets: Optional[Dict[str, Any]] = None
+    category_distribution: Optional[List[CategoryDistribution]] = None  # Top 10 categories
 
 class FeedProcessResult(BaseModel):
     shop_name: str

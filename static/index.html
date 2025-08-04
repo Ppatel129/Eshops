@@ -47,34 +47,26 @@
     <!-- Search Results Page -->
     <div id="mainContent" class="main-content" style="display:none;">
         <!-- Header -->
-        <div class="search-header d-flex">
+        <div class="search-header d-flex justify-content-between align-items-center">
             <div class="logo" style="padding-left: 2rem;" onclick="window.location.href='/'">Market.gr</div>
-            <div class="container-fluid">
-                <div class="row justify-content-center align-items-center flex-column flex-md-row">
-                    <div class="col-md-6 d-flex justify-content-start mb-2 mb-md-0">
-                        <div class="search-bar-wrapper">
-                            <i class="fas fa-search search-icon"></i>
-                            <input id="headerSearch" class="main-search" type="text" placeholder="Search products..."
-                                autocomplete="on">
-                            <button id="voiceBtnHeader" class="voice-btn" title="Voice Search"><i class="fas fa-microphone"></i></button>
-                            <button id="imageBtnHeader" class="image-btn" title="Image Search"><i class="fas fa-camera"></i></button>
-                            <div id="headerSuggestionsDropdown" class="suggestions-dropdown"></div>
-                        </div>
-                    </div>
-                    <div class="col-md-6 text-center text-md-end">
-                        <div class="burger-menu mx-auto mx-md-0" id="headerBurgerMenu">
-                            <span></span><span></span><span></span>
-                        </div>
-                        <div class="burger-dropdown" id="headerBurgerDropdown">
-                            <ul>
-                                <li><i class="fas fa-user"></i> Login</li>
-                                <li><i class="fas fa-clock"></i> History</li>
-                                <li><i class="fas fa-file-alt"></i> <a href="/terms" style="text-decoration: none; color: inherit;">Terms</a></li>
-                                <li><i class="fas fa-shield-alt"></i> <a href="/privacy" style="text-decoration: none; color: inherit;">Privacy</a></li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+            <div class="search-bar-wrapper" style="flex: 1; max-width: 600px; margin: 0 auto;">
+                <i class="fas fa-search search-icon"></i>
+                <input id="headerSearch" class="main-search" type="text" placeholder="Search products..."
+                    autocomplete="on">
+                <button id="voiceBtnHeader" class="voice-btn" title="Voice Search"><i class="fas fa-microphone"></i></button>
+                <button id="imageBtnHeader" class="image-btn" title="Image Search"><i class="fas fa-camera"></i></button>
+                <div id="headerSuggestionsDropdown" class="suggestions-dropdown"></div>
+            </div>
+            <div class="burger-menu" id="headerBurgerMenu">
+                <span></span><span></span><span></span>
+            </div>
+            <div class="burger-dropdown" id="headerBurgerDropdown">
+                <ul>
+                    <li><i class="fas fa-user"></i> Login</li>
+                    <li><i class="fas fa-clock"></i> History</li>
+                    <li><i class="fas fa-file-alt"></i> <a href="/terms" style="text-decoration: none; color: inherit;">Terms</a></li>
+                    <li><i class="fas fa-shield-alt"></i> <a href="/privacy" style="text-decoration: none; color: inherit;">Privacy</a></li>
+                </ul>
             </div>
         </div>
 
@@ -140,6 +132,22 @@
                 <div class="col-lg-9 col-md-8">
                     <div class="results-container">
                         <div class="search-stats" id="searchStats" style="display: none;"></div>
+                        
+                        <!-- Category Filter Bar -->
+                        <div class="category-filter-bar" id="categoryFilterBar" style="display: none;">
+                            <div class="category-filter-label">
+                                <i class="fas fa-tags me-2"></i>Main Categories
+                            </div>
+                            <div class="category-filter-container">
+                                <div class="category-filter-scroll" id="categoryFilterScroll">
+                                    <!-- Category filter buttons will be populated dynamically -->
+                                </div>
+                                <button class="clear-category-filters" id="clearCategoryFilters" style="display: none;">
+                                    <i class="fas fa-times"></i> Clear All
+                                </button>
+                            </div>
+                        </div>
+                        
                         <div class="results-header">
                             <div class="results-count" id="resultsCount">Searching products...</div>
                             <div class="results-meta" id="resultsMeta"></div>

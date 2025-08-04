@@ -468,6 +468,56 @@ async def get_search_facets(
         logger.error(f"Error getting facets: {e}")
         raise HTTPException(status_code=500, detail="Facets service error")
 
+@app.get("/category-distribution")
+async def get_category_distribution(
+    title: Optional[str] = Query(None, description="Search in product title"),
+    brand: Optional[str] = Query(None, description="Filter by brand"),
+    category: Optional[str] = Query(None, description="Filter by category"),
+    brands: Optional[List[str]] = Query(None, description="Filter by multiple brands"),
+    categories: Optional[List[str]] = Query(None, description="Filter by multiple categories"),
+    min_price: Optional[float] = Query(None, ge=0, description="Minimum price"),
+    max_price: Optional[float] = Query(None, ge=0, description="Maximum price"),
+    availability: Optional[bool] = Query(None, description="Filter by availability"),
+    ean: Optional[str] = Query(None, description="Search by EAN code"),
+    mpn: Optional[str] = Query(None, description="Search by MPN"),
+    color: Optional[str] = Query(None, description="Filter by color"),
+    size: Optional[str] = Query(None, description="Filter by size"),
+    shops: Optional[List[str]] = Query(None, description="Filter by multiple shops"),
+    limit: int = Query(10, ge=1, le=20, description="Maximum categories to return"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get category distribution for current search results"""
+    try:
+        # Build search filters
+        filters = SearchFilters(
+            title=title,
+            brand=brand,
+            brands=brands,
+            category=category,
+            categories=categories,
+            min_price=min_price,
+            max_price=max_price,
+            availability=availability,
+            ean=ean,
+            mpn=mpn,
+            color=color,
+            size=size,
+            shops=shops
+        )
+        
+        search_service = SearchService(db)
+        category_distribution = await search_service.get_category_distribution(filters, limit=limit)
+        
+        return {
+            "categories": category_distribution,
+            "total_categories": len(category_distribution),
+            "filters_applied": filters.dict()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting category distribution: {e}")
+        raise HTTPException(status_code=500, detail="Category distribution service error")
+
 @app.get("/shops", response_model=List[ShopSchema])
 async def get_shops(db: AsyncSession = Depends(get_db)):
     """Get all shops"""

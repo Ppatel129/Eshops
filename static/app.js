@@ -165,6 +165,14 @@ class ProductSearchApp {
             });
         }
 
+        // Category filter bar functionality
+        const clearCategoryFilters = document.getElementById('clearCategoryFilters');
+        if (clearCategoryFilters) {
+            clearCategoryFilters.addEventListener('click', () => {
+                this.clearCategoryFilters();
+            });
+        }
+
         // Header burger menu functionality
         let headerBurgerOpen = false;
         headerBurgerMenu.addEventListener('click', (e) => {
@@ -629,6 +637,17 @@ class ProductSearchApp {
 
         // Update search stats
         this.updateSearchStats(data);
+        
+        // Display category filter bar if category distribution is available
+        if (data.category_distribution) {
+            this.displayCategoryFilterBar(data.category_distribution);
+        } else {
+            // Hide category filter bar if no distribution data
+            const categoryFilterBar = document.getElementById('categoryFilterBar');
+            if (categoryFilterBar) {
+                categoryFilterBar.style.display = 'none';
+            }
+        }
     }
 
     createProductCard(product) {
@@ -675,16 +694,29 @@ class ProductSearchApp {
             availability = '<span class="badge bg-success">Available</span>';
         } else if (product.availability === false || product.availability === 'false') {
             availability = '<span class="badge bg-danger">Out of Stock</span>';
+        } else {
+            // If availability is unknown, try to infer from stock quantity
+            if (product.stock_quantity !== null && product.stock_quantity !== undefined && product.stock_quantity > 0) {
+                availability = '<span class="badge bg-success">Available</span>';
+            } else if (product.stock_quantity === 0) {
+                availability = '<span class="badge bg-danger">Out of Stock</span>';
+            }
         }
         
-        // Handle stock information
-        let stockInfo = '<small class="text-muted">Stock: Unknown</small>';
+        // Handle stock information with better logic
+        let stockInfo = '';
         if (product.stock_quantity !== null && product.stock_quantity !== undefined) {
             if (product.stock_quantity > 0) {
-                stockInfo = `<small class="text-muted">Stock: ${product.stock_quantity}</small>`;
+                stockInfo = `<small class="text-muted">Stock: ${product.stock_quantity} units</small>`;
             } else {
                 stockInfo = '<small class="text-muted">Stock: Out of Stock</small>';
             }
+        } else if (product.availability === true || product.availability === 'true') {
+            stockInfo = '<small class="text-muted">Stock: Available</small>';
+        } else if (product.availability === false || product.availability === 'false') {
+            stockInfo = '<small class="text-muted">Stock: Out of Stock</small>';
+        } else {
+            stockInfo = '<small class="text-muted">Stock: Check Store</small>';
         }
         
         // Handle shop information
@@ -713,7 +745,7 @@ class ProductSearchApp {
         const safeTitle = product.title ? product.title.replace(/[<>]/g, '') : 'Untitled Product';
         
         return `
-            <div class="product-card" onclick="app.showProductDetails(${product.id})">
+            <div class="product-card" onclick="${product.shop_count > 1 ? `app.showProductComparison(${product.id})` : `app.showProductDetails(${product.id})`}">
                 <img src="${imageUrl}" class="product-image" alt="${safeTitle}" onerror="this.src='https://via.placeholder.com/200x150?text=No+Image'">
                 <div class="product-content">
                     <div class="product-meta mb-2">
@@ -736,15 +768,9 @@ class ProductSearchApp {
                         </div>
                         <div class="shop-info">
                             ${shopInfo}
-                            ${product.shop_count > 1 ? `
-                                <button class="compare-button" onclick="event.stopPropagation(); app.showProductComparison(${product.id})">
-                                    <i class="fas fa-balance-scale"></i> Compare (${product.shop_count})
-                                </button>
-                            ` : `
-                                <button class="view-button" onclick="event.stopPropagation(); app.showProductDetails(${product.id})">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                            `}
+                            <button class="view-button" onclick="event.stopPropagation(); ${product.shop_count > 1 ? `app.showProductComparison(${product.id})` : `app.showProductDetails(${product.id})`}">
+                                <i class="fas fa-eye"></i>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -945,11 +971,131 @@ class ProductSearchApp {
         });
     }
 
+    // Category Filter Bar Methods
+    displayCategoryFilterBar(categoryDistribution) {
+        const categoryFilterBar = document.getElementById('categoryFilterBar');
+        const categoryFilterScroll = document.getElementById('categoryFilterScroll');
+        const clearCategoryFilters = document.getElementById('clearCategoryFilters');
+        
+        if (!categoryDistribution || categoryDistribution.length === 0) {
+            categoryFilterBar.style.display = 'none';
+            return;
+        }
+        
+        // Add "All Categories" button
+        const allCategoriesButton = `
+            <button class="category-filter-btn ${!this.currentFilters.categories ? 'active' : ''}" 
+                    onclick="app.clearCategoryFilters()">
+                <span class="category-name">All Categories</span>
+            </button>
+        `;
+        
+        // Create category cards
+        const categoryCards = categoryDistribution.map(category => {
+            const isActive = this.currentFilters.categories && 
+                           this.currentFilters.categories.includes(category.category_name);
+            const imageUrl = category.representative_image || '';
+            const displayName = category.category_name_en || category.category_name;
+            
+            console.log(`Category: ${displayName}, Image: ${imageUrl}`); // Debug log
+            
+            return `
+                <div class="category-filter-card ${isActive ? 'active' : ''}" 
+                     onclick="app.toggleCategoryFilter('${category.category_name}')"
+                     data-category-name="${category.category_name}">
+                    <div class="category-filter-card-image">
+                        ${imageUrl ? `<img src="${imageUrl}" alt="${displayName}" onerror="this.handleImageError(this, '${displayName}');" onload="console.log('Image loaded:', '${imageUrl}');" crossorigin="anonymous" />` : displayName}
+                    </div>
+                    <div class="category-filter-card-name">
+                        ${displayName}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        categoryFilterScroll.innerHTML = allCategoriesButton + categoryCards;
+        categoryFilterBar.style.display = 'block';
+        
+        // Show/hide clear button based on active filters
+        const hasActiveCategories = this.currentFilters.categories && 
+                                  this.currentFilters.categories.length > 0;
+        clearCategoryFilters.style.display = hasActiveCategories ? 'block' : 'none';
+    }
+
+    toggleCategoryFilter(categoryName) {
+        // Single selection only - replace current category
+        if (this.currentFilters.categories && this.currentFilters.categories.includes(categoryName)) {
+            // If clicking the same category, clear it completely
+            delete this.currentFilters.categories;
+        } else {
+            // Select this category (single selection)
+            this.currentFilters.categories = [categoryName];
+        }
+        
+        // Update UI
+        this.updateCategoryFilterButtons();
+        this.updateFilters();
+    }
+
+    updateCategoryFilterButtons() {
+        const categoryButtons = document.querySelectorAll('.category-filter-btn');
+        const categoryCards = document.querySelectorAll('.category-filter-card');
+        const clearCategoryFilters = document.getElementById('clearCategoryFilters');
+        
+        // Update category cards
+        categoryCards.forEach(card => {
+            const categoryName = card.getAttribute('data-category-name');
+            if (categoryName) {
+                const isActive = this.currentFilters.categories && 
+                               this.currentFilters.categories.includes(categoryName);
+                
+                if (isActive) {
+                    card.classList.add('active');
+                } else {
+                    card.classList.remove('active');
+                }
+            }
+        });
+        
+        // Update "All Categories" button state
+        const allCategoriesButton = document.querySelector('.category-filter-btn:not([data-category-name])');
+        if (allCategoriesButton) {
+            if (!this.currentFilters.categories) {
+                allCategoriesButton.classList.add('active');
+            } else {
+                allCategoriesButton.classList.remove('active');
+            }
+        }
+        
+        // Show/hide clear button
+        const hasActiveCategories = this.currentFilters.categories && 
+                                  this.currentFilters.categories.length > 0;
+        clearCategoryFilters.style.display = hasActiveCategories ? 'block' : 'none';
+    }
+
+    clearCategoryFilters() {
+        // Completely remove categories filter instead of setting empty array
+        delete this.currentFilters.categories;
+        this.updateCategoryFilterButtons();
+        this.updateFilters();
+    }
+
+    handleImageError(img, displayName) {
+        console.log('Image failed to load:', img.src);
+        img.style.display = 'none';
+        img.parentElement.innerHTML = displayName;
+    }
+
 
 
 
 
     updateFilters() {
+        // Clean up empty categories before sending to server
+        if (this.currentFilters.categories && this.currentFilters.categories.length === 0) {
+            delete this.currentFilters.categories;
+        }
+        
         this.updateActiveFilters();
         this.currentPage = 1;
         this.performSearch(this.currentPage);

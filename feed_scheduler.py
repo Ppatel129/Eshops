@@ -67,7 +67,7 @@ class FeedProcessor:
                 await db.commit()
                 
                 # Parse XML feed
-                logger.info(f"Processing feed for {shop_name}")
+                logger.info(f"Processing feed for {shop_name}...")
                 product_data_list = await self.parser.parse_feed(xml_url)
                 
                 if not product_data_list:
@@ -84,10 +84,17 @@ class FeedProcessor:
                         timestamp=datetime.utcnow()
                     )
                 
+                logger.info(f"Found {len(product_data_list)} products, processing in batches...")
+                
                 # Process products in batches
                 batch_size = 100
-                for i in range(0, len(product_data_list), batch_size):
-                    batch = product_data_list[i:i + batch_size]
+                total_batches = (len(product_data_list) + batch_size - 1) // batch_size
+                
+                for batch_num in range(0, len(product_data_list), batch_size):
+                    batch = product_data_list[batch_num:batch_num + batch_size]
+                    current_batch = (batch_num // batch_size) + 1
+                    
+                    logger.info(f"Processing batch {current_batch}/{total_batches} ({len(batch)} products)")
                     
                     for product_data in batch:
                         try:
@@ -105,8 +112,8 @@ class FeedProcessor:
                     await db.commit()
                     
                     # Log progress
-                    if i % (batch_size * 10) == 0:
-                        logger.info(f"Processed {i + len(batch)} / {len(product_data_list)} products for {shop_name}")
+                    if current_batch % 10 == 0:
+                        logger.info(f"Processed {batch_num + len(batch)} / {len(product_data_list)} products for {shop_name}")
                 
                 # Update shop status
                 await self.update_shop_status(db, shop.id, "completed", None, products_processed)
