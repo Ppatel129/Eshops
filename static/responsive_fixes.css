@@ -44,37 +44,156 @@
     max-height: none !important;
     overflow: visible !important;
     padding: 0 !important;
+    width: 100% !important;
 }
 
 /* 4. Remove scrollbars from left filter section */
 .filters-sidebar {
     overflow: visible !important;
     max-height: none !important;
+    width: 100% !important;
 }
 
 .filter-section {
     overflow: visible !important;
+    width: 100% !important;
 }
 
 .filter-options {
     overflow-y: auto !important;
     overflow-x: hidden !important;
     max-height: 300px !important;
+    width: 100% !important;
 }
 
 /* 5. Remove scrollbars from category card section */
 .category-filter-bar {
     overflow: hidden !important;
+    width: 100% !important;
 }
 
 .category-filter-container {
     overflow: hidden !important;
+    width: 100% !important;
 }
 
-/* 6. Mobile responsive fixes */
+/* 6. Hide "All Categories" card */
+.category-filter-btn {
+    display: none !important;
+}
+
+/* 7. Fix search bar responsive design with percentage widths */
+.search-bar-wrapper {
+    max-width: 100% !important;
+    width: 100% !important;
+    flex: 1 !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important; /* Remove minimum width constraint */
+}
+
+.main-search {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important; /* Remove minimum width constraint */
+}
+
+.search-header .search-bar-wrapper {
+    max-width: 100% !important;
+    width: 100% !important;
+    flex: 1 !important;
+    box-sizing: border-box !important;
+    min-width: 0 !important; /* Remove minimum width constraint */
+}
+
+/* 8. Fix container widths to prevent overflow */
+.container {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+.container-fluid {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+/* 9. Fix row and column widths */
+.row {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+.col-lg-3, .col-lg-9, .col-md-4, .col-md-8, .col-md-10, .col-lg-8 {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
+/* 10. Fix search header layout */
+.search-header {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
+
+/* 11. RESPONSIVE LAYOUT: Vertical to Horizontal Transition */
+/* Default: Vertical layout (mobile-first approach) */
+.row.results-container {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    gap: 1rem !important;
+}
+
+.filters-sidebar {
+    order: 1 !important; /* Filters appear first */
+    width: 100% !important;
+    margin-bottom: 1rem !important;
+}
+
+.products-section {
+    order: 2 !important; /* Products appear second */
+    width: 100% !important;
+}
+
+/* 12. Mobile responsive fixes */
 @media (max-width: 1200px) {
     .category-filter-scroll {
         grid-template-columns: repeat(4, 1fr) !important;
+    }
+    
+    .search-bar-wrapper {
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+    
+    /* Keep vertical layout on tablets */
+    .row.results-container {
+        flex-direction: column !important;
+    }
+    
+    .filters-sidebar {
+        order: 1 !important;
+        width: 100% !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    .products-section {
+        order: 2 !important;
+        width: 100% !important;
     }
 }
 
@@ -86,6 +205,7 @@
     .category-filter-card {
         min-height: 100px !important;
         padding: 0.75rem !important;
+        width: 100% !important;
     }
     
     .category-filter-card-image {
@@ -100,6 +220,74 @@
     .category-filter-card-count {
         font-size: 0.7rem !important;
     }
+    
+    /* Search bar responsive on mobile */
+    .search-header {
+        flex-direction: column !important;
+        gap: 1rem !important;
+        padding: 1rem !important;
+        width: 100% !important;
+    }
+    
+    .search-header .logo {
+        padding-left: 0 !important;
+        text-align: center !important;
+        width: 100% !important;
+    }
+    
+    .search-header .search-bar-wrapper {
+        max-width: 100% !important;
+        width: 100% !important;
+        margin: 0 !important;
+    }
+    
+    .search-header .burger-menu {
+        position: absolute !important;
+        top: 1rem !important;
+        right: 1rem !important;
+    }
+    
+    /* Landing page search responsive */
+    .landing-page .search-container {
+        padding: 1rem !important;
+        margin: 1rem !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    
+    .landing-page .search-bar-wrapper {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .landing-page .main-search {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    
+    .landing-page .voice-btn,
+    .landing-page .image-btn {
+        width: 100% !important;
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Keep vertical layout on mobile */
+    .row.results-container {
+        flex-direction: column !important;
+    }
+    
+    .filters-sidebar {
+        order: 1 !important;
+        width: 100% !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    .products-section {
+        order: 2 !important;
+        width: 100% !important;
+    }
 }
 
 @media (max-width: 480px) {
@@ -110,6 +298,7 @@
     .category-filter-card {
         min-height: 80px !important;
         padding: 0.5rem !important;
+        width: 100% !important;
     }
     
     .category-filter-card-image {
@@ -124,41 +313,248 @@
     .category-filter-card-count {
         font-size: 0.65rem !important;
     }
+    
+    /* Very small screens - stack search elements */
+    .search-header {
+        padding: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .search-header .search-bar-wrapper {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .search-header .main-search {
+        width: 100% !important;
+        font-size: 16px !important; /* Prevent zoom on iOS */
+    }
+    
+    .search-header .voice-btn,
+    .search-header .image-btn {
+        width: 100% !important;
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Landing page on very small screens */
+    .landing-page .search-container {
+        padding: 0.5rem !important;
+        margin: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .landing-page .search-bar-wrapper {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .landing-page .main-search {
+        width: 100% !important;
+        font-size: 16px !important;
+    }
+    
+    .landing-page .voice-btn,
+    .landing-page .image-btn {
+        width: 100% !important;
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Container padding for very small screens */
+    .container, .container-fluid {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    
+    /* Keep vertical layout on very small screens */
+    .row.results-container {
+        flex-direction: column !important;
+    }
+    
+    .filters-sidebar {
+        order: 1 !important;
+        width: 100% !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    .products-section {
+        order: 2 !important;
+        width: 100% !important;
+    }
 }
 
-/* 7. Ensure no horizontal overflow on any screen size */
+/* 13. DESKTOP LAYOUT: Horizontal (side-by-side) layout */
+@media (min-width: 1201px) {
+    /* Switch to horizontal layout on large screens */
+    .row.results-container {
+        flex-direction: row !important;
+        gap: 2rem !important;
+        align-items: flex-start !important;
+    }
+    
+    .filters-sidebar {
+        order: 1 !important;
+        width: 25% !important; /* Fixed width for filters */
+        min-width: 250px !important;
+        max-width: 300px !important;
+        margin-bottom: 0 !important;
+        position: sticky !important;
+        top: 1rem !important;
+    }
+    
+    .products-section {
+        order: 2 !important;
+        width: 75% !important; /* Remaining space for products */
+        flex: 1 !important;
+    }
+    
+    /* Adjust column widths for horizontal layout */
+    .col-lg-3 {
+        width: 25% !important;
+        margin-bottom: 0 !important;
+    }
+    
+    .col-lg-9 {
+        width: 75% !important;
+    }
+    
+    /* Search bar can be wider on desktop */
+    .search-bar-wrapper {
+        max-width: 800px !important;
+        width: 100% !important;
+    }
+    
+    .main-search {
+        max-width: 800px !important;
+        width: 100% !important;
+    }
+}
+
+/* 14. Ensure no horizontal overflow on any screen size */
 .category-filter-card {
     overflow: hidden !important;
     word-wrap: break-word !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
 }
 
 .category-filter-card-name {
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
+    width: 100% !important;
 }
 
-/* 8. Fix mobile elements being cut off */
+/* 15. Fix mobile elements being cut off */
 @media (max-width: 768px) {
     .container {
         padding: 0 10px !important;
+        width: 100% !important;
+        max-width: 100% !important;
     }
     
     .product-grid {
         grid-template-columns: 1fr !important;
         gap: 1rem !important;
+        width: 100% !important;
     }
     
     .results-header {
         flex-direction: column !important;
         align-items: flex-start !important;
+        width: 100% !important;
     }
     
     .header-content {
         flex-direction: column !important;
         gap: 1rem !important;
+        width: 100% !important;
     }
     
     .header-search {
         max-width: 100% !important;
+        width: 100% !important;
     }
+}
+
+/* 16. Additional responsive improvements */
+@media (max-width: 576px) {
+    /* Extra small devices */
+    .search-header {
+        padding: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .search-header .logo {
+        font-size: 1.5rem !important;
+        width: 100% !important;
+    }
+    
+    .search-header .search-bar-wrapper {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .search-header .main-search {
+        width: 100% !important;
+        font-size: 16px !important;
+        padding: 0.75rem !important;
+    }
+    
+    .search-header .voice-btn,
+    .search-header .image-btn {
+        width: 100% !important;
+        padding: 0.75rem !important;
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Landing page extra small */
+    .landing-page .search-container {
+        padding: 0.5rem !important;
+        margin: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .landing-page .search-bar-wrapper {
+        flex-direction: column !important;
+        gap: 0.5rem !important;
+        width: 100% !important;
+    }
+    
+    .landing-page .main-search {
+        width: 100% !important;
+        font-size: 16px !important;
+        padding: 0.75rem !important;
+    }
+    
+    .landing-page .voice-btn,
+    .landing-page .image-btn {
+        width: 100% !important;
+        padding: 0.75rem !important;
+        margin: 0.25rem 0 !important;
+    }
+    
+    /* Container padding for extra small screens */
+    .container, .container-fluid {
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+    }
+}
+
+/* 17. Global overflow prevention */
+* {
+    box-sizing: border-box !important;
+}
+
+body {
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+html {
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100% !important;
 } 

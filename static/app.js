@@ -1025,15 +1025,7 @@ class ProductSearchApp {
             return;
         }
         
-        // Add "All Categories" button
-        const allCategoriesButton = `
-            <button class="category-filter-btn ${!this.currentFilters.categories ? 'active' : ''}" 
-                    onclick="app.clearCategoryFilters()">
-                <span class="category-name">All Categories</span>
-            </button>
-        `;
-        
-        // Create category cards - limit to 12 maximum
+        // Create category cards - limit to 12 maximum (removed "All Categories" button)
         const limitedCategories = categoryDistribution.slice(0, 12); // Limit to 12 categories
         const categoryCards = limitedCategories.map(category => {
             const isActive = this.currentFilters.categories && 
@@ -1061,7 +1053,7 @@ class ProductSearchApp {
             `;
         }).join('');
         
-        categoryFilterScroll.innerHTML = allCategoriesButton + categoryCards;
+        categoryFilterScroll.innerHTML = categoryCards;
         categoryFilterBar.style.display = 'block';
         
         // Show/hide clear button based on active filters
@@ -1086,7 +1078,6 @@ class ProductSearchApp {
     }
 
     updateCategoryFilterButtons() {
-        const categoryButtons = document.querySelectorAll('.category-filter-btn');
         const categoryCards = document.querySelectorAll('.category-filter-card');
         const clearCategoryFilters = document.getElementById('clearCategoryFilters');
         
@@ -1104,16 +1095,6 @@ class ProductSearchApp {
                 }
             }
         });
-        
-        // Update "All Categories" button state
-        const allCategoriesButton = document.querySelector('.category-filter-btn:not([data-category-name])');
-        if (allCategoriesButton) {
-            if (!this.currentFilters.categories) {
-                allCategoriesButton.classList.add('active');
-            } else {
-                allCategoriesButton.classList.remove('active');
-            }
-        }
         
         // Show/hide clear button
         const hasActiveCategories = this.currentFilters.categories && 
