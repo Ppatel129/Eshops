@@ -317,34 +317,33 @@ class ProductSearchApp {
 
 
     async getSuggestions(query) {
+        if (!query || query.length < 2) {
+            this.hideSuggestions();
+            return;
+        }
+
         try {
-            // Get regular search suggestions with fuzzy search enabled
+            // Get product suggestions
             const suggestionsResponse = await fetch(`/suggestions?q=${encodeURIComponent(query)}&limit=5&fuzzy=true`);
-            
-            if (!suggestionsResponse.ok) {
-                console.error('Suggestions API error:', suggestionsResponse.status, suggestionsResponse.statusText);
-                return;
-            }
-            
             const suggestions = await suggestionsResponse.json();
 
             // Get category suggestions
             const categoriesResponse = await fetch(`/categories/search?q=${encodeURIComponent(query)}&limit=3`);
-            
-            if (!categoriesResponse.ok) {
-                console.error('Categories API error:', categoriesResponse.status, categoriesResponse.statusText);
-                return;
-            }
-            
             const categories = await categoriesResponse.json();
 
-            this.displaySuggestions(suggestions, categories);
+            // Get brand suggestions
+            const brandsResponse = await fetch(`/brands/search?q=${encodeURIComponent(query)}&limit=3`);
+            const brands = await brandsResponse.json();
+
+            // Display all suggestions
+            this.displaySuggestions(suggestions, categories, brands);
         } catch (error) {
-            console.error('Error getting suggestions:', error);
+            console.error('Error fetching suggestions:', error);
+            this.hideSuggestions();
         }
     }
 
-    displaySuggestions(suggestions, categories = [], targetDropdown = null) {
+    displaySuggestions(suggestions, categories = [], brands = [], targetDropdown = null) {
         // Determine which dropdown to use
         let dropdown = targetDropdown;
         if (!dropdown) {
@@ -381,12 +380,29 @@ class ProductSearchApp {
             html += '</div>';
         }
 
+        // Display brand suggestions
+        if (brands && brands.length > 0) {
+            html += '<div class="suggestion-section"><div class="suggestion-title">Brands</div>';
+            brands.forEach(brand => {
+                const brandName = brand.name || brand.key || brand;
+                const brandCount = brand.product_count || brand.total_products || brand.count || 0;
+                html += `
+                    <div class="suggestion-item brand-suggestion" onclick="app.selectBrandSuggestion('${brandName.replace(/'/g, "\\'")}')">
+                        <i class="fas fa-tag suggestion-icon"></i>
+                        <span>${brandName}</span>
+                        <span class="brand-count">${brandCount} products</span>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        }
+
         // Display category suggestions
         if (categories && categories.length > 0) {
             html += '<div class="suggestion-section"><div class="suggestion-title">Categories</div>';
             categories.forEach(category => {
                 const categoryName = category.name || category.key || category;
-                const categoryCount = category.total_products || category.unique_products || category.count || 0;
+                const categoryCount = category.product_count || category.total_products || category.count || 0;
                 html += `
                     <div class="suggestion-item category-suggestion" onclick="app.selectCategorySuggestion('${categoryName.replace(/'/g, "\\'")}')">
                         <i class="fas fa-layer-group suggestion-icon"></i>
@@ -458,6 +474,33 @@ class ProductSearchApp {
         
         if (searchInput && searchInput.id === 'mainSearch') {
             this.transitionToSearchResults(categoryName);
+        } else {
+            this.currentPage = 1;
+            this.performSearch(this.currentPage);
+        }
+    }
+
+    selectBrandSuggestion(brandName) {
+        const searchInput = document.getElementById('mainSearch');
+        const headerSearch = document.getElementById('headerSearch');
+        
+        // Set the brand name as the search query
+        if (searchInput) searchInput.value = brandName;
+        if (headerSearch) headerSearch.value = brandName;
+        
+        this.currentQuery = brandName;
+        if (this.suggestionsDropdown) {
+            this.suggestionsDropdown.style.display = 'none';
+        }
+        if (this.headerSuggestionsDropdown) {
+            this.headerSuggestionsDropdown.style.display = 'none';
+        }
+        
+        // Perform search with brand filter
+        this.currentFilters.brand = brandName;
+        
+        if (searchInput && searchInput.id === 'mainSearch') {
+            this.transitionToSearchResults(brandName);
         } else {
             this.currentPage = 1;
             this.performSearch(this.currentPage);
@@ -990,14 +1033,16 @@ class ProductSearchApp {
             </button>
         `;
         
-        // Create category cards
-        const categoryCards = categoryDistribution.map(category => {
+        // Create category cards - limit to 12 maximum
+        const limitedCategories = categoryDistribution.slice(0, 12); // Limit to 12 categories
+        const categoryCards = limitedCategories.map(category => {
             const isActive = this.currentFilters.categories && 
                            this.currentFilters.categories.includes(category.category_name);
             const imageUrl = category.representative_image || '';
             const displayName = category.category_name_en || category.category_name;
+            const productCount = category.count || 0;
             
-            console.log(`Category: ${displayName}, Image: ${imageUrl}`); // Debug log
+            console.log(`Category: ${displayName}, Image: ${imageUrl}, Count: ${productCount}`); // Debug log
             
             return `
                 <div class="category-filter-card ${isActive ? 'active' : ''}" 
@@ -1008,6 +1053,9 @@ class ProductSearchApp {
                     </div>
                     <div class="category-filter-card-name">
                         ${displayName}
+                        <div class="category-filter-card-count">
+                            ${productCount} product${productCount !== 1 ? 's' : ''}
+                        </div>
                     </div>
                 </div>
             `;

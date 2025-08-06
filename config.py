@@ -34,11 +34,11 @@ class Settings:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     
     # Optional AI features
-    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
+    OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY", "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")
     
     # Elasticsearch configuration
-    ELASTICSEARCH_ENABLED: bool = os.getenv("ELASTICSEARCH_ENABLED", "false").lower() == "true"
-    ELASTICSEARCH_HOST: str = os.getenv("ELASTICSEARCH_HOST", "0.0.0.0")
+    ELASTICSEARCH_ENABLED: bool = os.getenv("ELASTICSEARCH_ENABLED", "true").lower() == "true"
+    ELASTICSEARCH_HOST: str = os.getenv("ELASTICSEARCH_HOST", "localhost")
     ELASTICSEARCH_PORT: int = int(os.getenv("ELASTICSEARCH_PORT", "9200"))
     ELASTICSEARCH_USERNAME: Optional[str] = os.getenv("ELASTICSEARCH_USERNAME")
     ELASTICSEARCH_PASSWORD: Optional[str] = os.getenv("ELASTICSEARCH_PASSWORD")

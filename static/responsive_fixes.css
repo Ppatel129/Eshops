@@ -1,0 +1,164 @@
+/* Responsive Fixes for Market.gr */
+
+/* 1. Remove logo animation completely */
+.logo {
+    transition: none !important;
+    transform: none !important;
+    animation: none !important;
+}
+
+.logo:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* 2. Remove shadow effects from search bar on landing page */
+.landing-page .search-container {
+    box-shadow: none !important;
+}
+
+.landing-page .search-input {
+    box-shadow: none !important;
+    transition: none !important;
+}
+
+.landing-page .search-input:focus {
+    box-shadow: none !important;
+}
+
+.landing-page .search-button {
+    box-shadow: none !important;
+    transition: none !important;
+}
+
+.landing-page .search-button:hover {
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* 3. Fix category cards - 6 per line, max 2 lines (12 total) */
+.category-filter-scroll {
+    display: grid !important;
+    grid-template-columns: repeat(6, 1fr) !important;
+    gap: 0.75rem !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+}
+
+/* 4. Remove scrollbars from left filter section */
+.filters-sidebar {
+    overflow: visible !important;
+    max-height: none !important;
+}
+
+.filter-section {
+    overflow: visible !important;
+}
+
+.filter-options {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    max-height: 300px !important;
+}
+
+/* 5. Remove scrollbars from category card section */
+.category-filter-bar {
+    overflow: hidden !important;
+}
+
+.category-filter-container {
+    overflow: hidden !important;
+}
+
+/* 6. Mobile responsive fixes */
+@media (max-width: 1200px) {
+    .category-filter-scroll {
+        grid-template-columns: repeat(4, 1fr) !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .category-filter-scroll {
+        grid-template-columns: repeat(3, 1fr) !important;
+    }
+    
+    .category-filter-card {
+        min-height: 100px !important;
+        padding: 0.75rem !important;
+    }
+    
+    .category-filter-card-image {
+        width: 40px !important;
+        height: 40px !important;
+    }
+    
+    .category-filter-card-name {
+        font-size: 0.8rem !important;
+    }
+    
+    .category-filter-card-count {
+        font-size: 0.7rem !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .category-filter-scroll {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    
+    .category-filter-card {
+        min-height: 80px !important;
+        padding: 0.5rem !important;
+    }
+    
+    .category-filter-card-image {
+        width: 30px !important;
+        height: 30px !important;
+    }
+    
+    .category-filter-card-name {
+        font-size: 0.75rem !important;
+    }
+    
+    .category-filter-card-count {
+        font-size: 0.65rem !important;
+    }
+}
+
+/* 7. Ensure no horizontal overflow on any screen size */
+.category-filter-card {
+    overflow: hidden !important;
+    word-wrap: break-word !important;
+}
+
+.category-filter-card-name {
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+}
+
+/* 8. Fix mobile elements being cut off */
+@media (max-width: 768px) {
+    .container {
+        padding: 0 10px !important;
+    }
+    
+    .product-grid {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+    
+    .results-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+    }
+    
+    .header-content {
+        flex-direction: column !important;
+        gap: 1rem !important;
+    }
+    
+    .header-search {
+        max-width: 100% !important;
+    }
+} 

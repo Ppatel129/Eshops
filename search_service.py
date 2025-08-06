@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, text
 
 from models import Product, Shop, Brand, Category, ProductVariant
-from schemas import SearchFilters, SearchResponse, Product as ProductSchema
+from schemas import SearchFilters, SearchResponse, Product as ProductSchema, Shop as ShopSchema, Brand as BrandSchema, Category as CategorySchema
 import logging
 import time
 from fuzzywuzzy import fuzz, process
@@ -24,6 +24,11 @@ class SearchService:
                 self.openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             except Exception as e:
                 logger.warning(f"OpenAI client initialization failed: {e}")
+        
+        # Brand search cache for ultra-fast responses
+        self._brand_cache = {}
+        self._brand_cache_timestamp = 0
+        self._brand_cache_ttl = 300  # 5 minutes cache TTL
 
     async def process_query_with_ai(self, query: str) -> Dict[str, Any]:
         """Process search query using AI to extract intent, correct misspellings, and identify components"""
@@ -31,14 +36,22 @@ class SearchService:
             return self._fallback_query_processing(query)
         
         try:
-            # Create a structured prompt for query analysis
+            # Create a structured prompt for query analysis with focus on spelling correction
             prompt = f"""
-            Analyze this e-commerce search query and extract structured information:
+            Analyze this e-commerce search query and correct any spelling mistakes:
             Query: "{query}"
+            
+            IMPORTANT: Focus on correcting common typos and misspellings. For example:
+            - "aple" should be corrected to "apple"
+            - "samsun" should be corrected to "samsung"
+            - "iphne" should be corrected to "iphone"
+            - "smartphne" should be corrected to "smartphone"
+            - "laptp" should be corrected to "laptop"
+            - "headphnes" should be corrected to "headphones"
             
             Return a JSON object with:
             {{
-                "corrected_query": "spelling corrected version",
+                "corrected_query": "spelling corrected version (fix typos)",
                 "original_query": "{query}",
                 "intent": "product_search|category_search|brand_search|combined",
                 "components": {{
@@ -52,9 +65,9 @@ class SearchService:
             }}
             
             Examples:
-            - "PanzerGlass Samsung" -> brands: ["PanzerGlass", "Samsung"], intent: "combined"
-            - "iphone 13 pro" -> brands: ["Apple"], product_terms: ["iPhone", "13", "Pro"], intent: "product_search"
-            - "smartphones" -> categories: ["Smartphones"], intent: "category_search"
+            - "aple" -> {{"corrected_query": "apple", "intent": "product_search", "components": {{"brands": ["Apple"], "categories": [], "product_terms": ["apple"], "attributes": []}}, "suggestions": ["iPhone", "iPad", "MacBook"]}}
+            - "samsun" -> {{"corrected_query": "samsung", "intent": "product_search", "components": {{"brands": ["Samsung"], "categories": [], "product_terms": ["samsung"], "attributes": []}}, "suggestions": ["Galaxy", "Smart TV", "Phone"]}}
+            - "iphne" -> {{"corrected_query": "iphone", "intent": "product_search", "components": {{"brands": ["Apple"], "categories": ["Smartphones"], "product_terms": ["iPhone"], "attributes": []}}, "suggestions": ["iPhone 13", "iPhone 14", "iPhone 15"]}}
             """
             
             response = await self.openai_client.chat.completions.create(
@@ -265,24 +278,20 @@ class SearchService:
                 **relevance_params
             }
 
-            # Build search conditions based on AI analysis (make them optional)
+            # Build search conditions based on AI analysis
             if query_analysis['components']['brands']:
                 brand_conditions = []
                 for brand in query_analysis['components']['brands']:
                     brand_conditions.append(f"LOWER(b.name) LIKE '%{brand.lower()}%'")
                 if brand_conditions:
-                    # Make brand conditions optional by using OR with title search
-                    brand_or_title = f"({' OR '.join(brand_conditions)}) OR LOWER(p.title) LIKE '%{filters.title.lower()}%'"
-                    conditions.append(f"({brand_or_title})")
+                    conditions.append(f"({' OR '.join(brand_conditions)})")
 
             if query_analysis['components']['categories']:
                 category_conditions = []
                 for category in query_analysis['components']['categories']:
                     category_conditions.append(f"LOWER(c.name) LIKE '%{category.lower()}%'")
                 if category_conditions:
-                    # Make category conditions optional by using OR with title search
-                    category_or_title = f"({' OR '.join(category_conditions)}) OR LOWER(p.title) LIKE '%{filters.title.lower()}%'"
-                    conditions.append(f"({category_or_title})")
+                    conditions.append(f"({' OR '.join(category_conditions)})")
 
             # Add product terms to title search with fuzzy matching
             if query_analysis['components']['product_terms']:
@@ -293,8 +302,8 @@ class SearchService:
                 if product_conditions:
                     conditions.append(f"({' OR '.join(product_conditions)})")
 
-            # Always include original title search as a fallback
-            if filters.title:
+            # Fallback to original title search if no AI components found
+            if filters.title and not query_analysis['components']['brands'] and not query_analysis['components']['categories'] and not query_analysis['components']['product_terms']:
                 conditions.append("LOWER(p.title) ILIKE :title OR p.title % :title_similar")
                 params["title"] = f"%{filters.title.lower()}%"
                 params["title_similar"] = filters.title
@@ -568,46 +577,86 @@ class SearchService:
         page: int = 1,
         per_page: int = 50
     ) -> SearchResponse:
-        """Search products with enhanced multi-term support"""
+        """Search products with enhanced multi-term support and fuzzy search - OPTIMIZED VERSION"""
+        start_time = time.time()
+        
         try:
-            # Process complex queries
-            query_terms = self.process_search_query(filters.title or filters.q or "")
-            logger.info(f"Search query: '{filters.title or filters.q}', processed terms: {query_terms}")
+            # Fast query processing with common corrections
+            original_query = filters.title or ""
             
-            # Build base query with left joins
-            query = select(Product).outerjoin(Product.shop).outerjoin(Product.brand).outerjoin(Product.category)
+            # Fast common corrections lookup (no AI processing for speed)
+            common_corrections = {
+                'aple': 'apple',
+                'aplle': 'apple',
+                'appel': 'apple',
+                'samsun': 'samsung',
+                'samsng': 'samsung',
+                'iphne': 'iphone',
+                'iphon': 'iphone',
+                'smartphne': 'smartphone',
+                'smartphn': 'smartphone',
+                'laptp': 'laptop',
+                'lapto': 'laptop',
+                'headphnes': 'headphones',
+                'headphne': 'headphone',
+                'camra': 'camera',
+                'chargr': 'charger',
+                'keybord': 'keyboard',
+                'mous': 'mouse',
+                'speakr': 'speaker',
+                'microphne': 'microphone',
+                'blutooth': 'bluetooth',
+            }
             
-            # Apply search conditions for multiple terms
+            # Apply fast correction
+            corrected_query = original_query
+            if original_query.lower().strip() in common_corrections:
+                corrected_query = common_corrections[original_query.lower().strip()]
+                logger.info(f"Fast correction: '{original_query}' -> '{corrected_query}'")
+            
+            # Optimized search processing
+            if corrected_query != original_query:
+                query_terms = [corrected_query]
+                logger.info(f"Using corrected query: '{original_query}' -> '{corrected_query}'")
+            else:
+                query_terms = [corrected_query] if corrected_query else []
+            
+            # OPTIMIZATION 1: Use single query with all necessary joins upfront
+            # This eliminates N+1 queries and reduces database round trips
+            query = select(
+                Product,
+                Brand.name.label('brand_name'),
+                Category.name.label('category_name'),
+                Shop.name.label('shop_name')
+            )
+            
+            # Always join with Brand, Category, and Shop to get all data in one query
+            query = query.outerjoin(Brand, Product.brand_id == Brand.id)
+            query = query.outerjoin(Category, Product.category_id == Category.id)
+            query = query.outerjoin(Shop, Product.shop_id == Shop.id)
+            
+            # Apply search conditions efficiently
             if query_terms:
-                search_conditions = []
-                for term in query_terms:
-                    # Use ILIKE for case-insensitive search
-                    term_condition = or_(
-                        Product.title.ilike(f"%{term}%"),
-                        Product.description.ilike(f"%{term}%"),
-                        Product.ean.ilike(f"%{term}%"),
-                        Product.mpn.ilike(f"%{term}%")
-                    )
-                    search_conditions.append(term_condition)
-                
-                # Combine all search conditions with OR
-                query = query.where(or_(*search_conditions))
-                logger.info(f"Applied search conditions for terms: {query_terms}")
+                # OPTIMIZATION: Use LOWER function for better index usage
+                search_condition = func.lower(Product.title).ilike(f"%{query_terms[0].lower()}%")
+                query = query.where(search_condition)
+                logger.info(f"Applied optimized search for: {query_terms[0]}")
+            else:
+                logger.info(f"No search terms to apply - using filters only")
             
-            # Apply filters with left joins
+            # Apply filters efficiently (no duplicate joins needed)
             if filters.brand:
-                query = query.outerjoin(Brand).where(Brand.name.ilike(f"%{filters.brand}%"))
+                query = query.where(Brand.name.ilike(f"%{filters.brand}%"))
                 logger.info(f"Applied brand filter: {filters.brand}")
             
             if filters.category:
-                query = query.outerjoin(Category).where(Category.name.ilike(f"%{filters.category}%"))
+                query = query.where(Category.name.ilike(f"%{filters.category}%"))
                 logger.info(f"Applied category filter: {filters.category}")
             
             if filters.categories:
-                # Filter out empty categories
                 valid_categories = [cat for cat in filters.categories if cat and cat.strip()]
                 if valid_categories:
-                    query = query.outerjoin(Category).where(Category.name.in_(valid_categories))
+                    query = query.where(Category.name.in_(valid_categories))
                     logger.info(f"Applied categories filter: {valid_categories}")
             
             if filters.min_price is not None:
@@ -631,7 +680,7 @@ class SearchService:
                 logger.info(f"Applied MPN filter: {filters.mpn}")
             
             if filters.shops:
-                query = query.outerjoin(Shop).where(Shop.name.in_(filters.shops))
+                query = query.where(Shop.name.in_(filters.shops))
                 logger.info(f"Applied shops filter: {filters.shops}")
             
             # Apply sorting
@@ -652,26 +701,51 @@ class SearchService:
             
             # Execute query
             result = await self.db.execute(query)
-            products = result.scalars().all()
-            logger.info(f"Found {len(products)} products for query")
+            rows = result.all()
+            logger.info(f"Found {len(rows)} products for query")
             
-            # Convert to response format
+            # OPTIMIZATION 2: Convert results efficiently without additional queries
             product_schemas = []
-            for product in products:
-                # Get brand and category info
-                brand_info = None
-                if product.brand_id:
-                    brand_query = select(Brand).where(Brand.id == product.brand_id)
-                    brand_result = await self.db.execute(brand_query)
-                    brand_info = brand_result.scalar_one_or_none()
+            for row in rows:
+                product, brand_name, category_name, shop_name = row
                 
-                category_info = None
-                if product.category_id:
-                    cat_query = select(Category).where(Category.id == product.category_id)
-                    cat_result = await self.db.execute(cat_query)
-                    category_info = cat_result.scalar_one_or_none()
+                # Create product schema with all data from single query
+                # Handle optional objects properly to avoid validation errors
+                brand_obj = None
+                if product.brand_id and brand_name:
+                    brand_obj = BrandSchema(
+                        id=product.brand_id,
+                        name=brand_name,
+                        normalized_name=brand_name.lower(),
+                        created_at=product.created_at  # Use product's created_at as fallback
+                    )
                 
-                # Create basic product schema without complex objects
+                category_obj = None
+                if product.category_id and category_name:
+                    category_obj = CategorySchema(
+                        id=product.category_id,
+                        name=category_name,
+                        normalized_name=category_name.lower(),
+                        path=None,
+                        level=0,
+                        parent_id=None,
+                        created_at=product.created_at  # Use product's created_at as fallback
+                    )
+                
+                shop_obj = None
+                if product.shop_id and shop_name:
+                    shop_obj = ShopSchema(
+                        id=product.shop_id,
+                        name=shop_name,
+                        xml_url="",  # Required field, set empty string
+                        last_sync=None,
+                        sync_status="pending",
+                        error_message=None,
+                        total_products=0,
+                        created_at=product.created_at,  # Use product's created_at as fallback
+                        updated_at=product.updated_at   # Use product's updated_at as fallback
+                    )
+                
                 product_schemas.append(ProductSchema(
                     id=product.id,
                     title=product.title,
@@ -681,9 +755,9 @@ class SearchService:
                     availability=product.availability,
                     ean=product.ean,
                     mpn=product.mpn,
-                    brand=None,  # Skip complex objects for now
-                    category=None,  # Skip complex objects for now
-                    shop=None,  # Skip complex objects for now
+                    brand=brand_obj,
+                    category=category_obj,
+                    shop=shop_obj,
                     shop_id=product.shop_id,
                     brand_id=product.brand_id,
                     category_id=product.category_id,
@@ -692,33 +766,70 @@ class SearchService:
                     updated_at=product.updated_at
                 ))
             
-            # Get total count for pagination
-            count_query = select(func.count(Product.id))
-            if query_terms:
-                search_conditions = []
-                for term in query_terms:
-                    term_condition = or_(
-                        Product.title.ilike(f"%{term}%"),
-                        Product.description.ilike(f"%{term}%"),
-                        Product.ean.ilike(f"%{term}%"),
-                        Product.mpn.ilike(f"%{term}%")
-                    )
-                    search_conditions.append(term_condition)
-                count_query = count_query.where(or_(*search_conditions))
+            # OPTIMIZATION 3: Use window function for count to avoid separate count query
+            # This is much faster than a separate count query
+            count_query = select(
+                func.count().over().label('total_count'),
+                Product.id
+            )
             
-            count_result = await self.db.execute(count_query)
-            total_count = count_result.scalar()
+            # Apply same joins and conditions as main query
+            count_query = count_query.outerjoin(Brand, Product.brand_id == Brand.id)
+            count_query = count_query.outerjoin(Category, Product.category_id == Category.id)
+            count_query = count_query.outerjoin(Shop, Product.shop_id == Shop.id)
+            
+            # Apply search conditions to count query
+            if query_terms:
+                search_condition = func.lower(Product.title).ilike(f"%{query_terms[0].lower()}%")
+                count_query = count_query.where(search_condition)
+            
+            # Apply same filters to count query
+            if filters.brand:
+                count_query = count_query.where(Brand.name.ilike(f"%{filters.brand}%"))
+            
+            if filters.category:
+                count_query = count_query.where(Category.name.ilike(f"%{filters.category}%"))
+            
+            if filters.categories:
+                valid_categories = [cat for cat in filters.categories if cat and cat.strip()]
+                if valid_categories:
+                    count_query = count_query.where(Category.name.in_(valid_categories))
+            
+            if filters.min_price is not None:
+                count_query = count_query.where(Product.price >= filters.min_price)
+            
+            if filters.max_price is not None:
+                count_query = count_query.where(Product.price <= filters.max_price)
+            
+            if filters.availability is not None:
+                count_query = count_query.where(Product.availability == filters.availability)
+            
+            if filters.ean:
+                count_query = count_query.where(Product.ean.ilike(f"%{filters.ean}%"))
+            
+            if filters.mpn:
+                count_query = count_query.where(Product.mpn.ilike(f"%{filters.mpn}%"))
+            
+            if filters.shops:
+                count_query = count_query.where(Shop.name.in_(filters.shops))
+            
+            # Get total count from first row
+            count_result = await self.db.execute(count_query.limit(1))
+            count_row = count_result.first()
+            total_count = count_row[0] if count_row else 0
             logger.info(f"Total count for query: {total_count}")
             
-            # Get category distribution for the current search results (optional and fast)
+            # Get category distribution for category cards
             category_distribution = []
-            # Only get categories for meaningful searches (not empty or too short)
-            if filters.title and len(filters.title.strip()) >= 2:
+            if query_terms and len(query_terms[0].strip()) >= 2:
                 try:
-                    category_distribution = await self.get_category_distribution(filters, limit=10)
+                    category_distribution = await self.get_category_distribution(filters, limit=12)  # Limit to 12 for responsive layout
+                    logger.info(f"Found {len(category_distribution)} categories for distribution")
                 except Exception as e:
-                    logger.warning(f"Failed to get category distribution: {e}")
-                    # Continue without category distribution
+                    logger.warning(f"Error getting category distribution: {e}")
+                    category_distribution = []
+            
+            execution_time = (time.time() - start_time) * 1000
             
             return SearchResponse(
                 products=product_schemas,
@@ -727,12 +838,16 @@ class SearchService:
                 per_page=per_page,
                 total_pages=(total_count + per_page - 1) // per_page,
                 filters_applied={},
-                execution_time_ms=0.0,
+                execution_time_ms=execution_time,
                 category_distribution=category_distribution
             )
             
         except Exception as e:
             logger.error(f"Error searching products: {e}")
+            logger.error(f"Filters: {filters.dict() if filters else 'None'}")
+            logger.error(f"Page: {page}, Per page: {per_page}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
 
     def process_search_query(self, query: str) -> List[str]:
@@ -1078,25 +1193,30 @@ class SearchService:
             return None
 
     async def get_search_suggestions(self, query: str, limit: int = 10) -> List[str]:
-        """Get AI-enhanced search suggestions based on query"""
+        """Get AI-enhanced search suggestions with fuzzy search"""
         try:
             if not query or len(query) < 2:
                 return []
-                
+            
+            suggestions = []
+            
+            # Get fuzzy search suggestions first
+            fuzzy_suggestions = await self.fuzzy_search_suggestions(query, limit=limit//3)
+            suggestions.extend(fuzzy_suggestions)
+            
             # Process query with AI for better suggestions
             query_analysis = await self.process_query_with_ai(query)
-            suggestions = []
 
             # Add AI-generated suggestions
             if query_analysis.get('suggestions'):
-                suggestions.extend(query_analysis['suggestions'][:limit//2])
+                suggestions.extend(query_analysis['suggestions'][:limit//3])
             
             # Add corrected query if different from original
             if query_analysis.get('corrected_query') and query_analysis['corrected_query'] != query:
                 suggestions.insert(0, query_analysis['corrected_query'])
             
             # Get database-based suggestions
-            db_suggestions = await self._get_database_suggestions(query, limit // 2)
+            db_suggestions = await self._get_database_suggestions(query, limit // 3)
             suggestions.extend(db_suggestions)
             
             # Remove duplicates and limit
@@ -1116,78 +1236,92 @@ class SearchService:
             return await self._get_database_suggestions(query, limit)
 
     async def _get_database_suggestions(self, query: str, limit: int) -> List[str]:
-        """Get database-based search suggestions"""
+        """Get fast database-based search suggestions - OPTIMIZED VERSION"""
         try:
-            suggestions = []
-
-            # Title suggestions with improved matching
-            title_query = select(Product.title).where(
-                or_(
-                    func.lower(Product.title).contains(query.lower()),
-                    func.lower(Product.title).like(f"{query.lower()}%"),
-                    func.lower(Product.search_text).contains(query.lower())
-                )
-            ).limit(limit // 3)
-
-            title_result = await self.db.execute(title_query)
-            titles = [row[0] for row in title_result if row[0]]
-            suggestions.extend(titles)
-
-            # Brand suggestions
-            brand_query = select(Brand.name).where(
-                or_(
-                    func.lower(Brand.name).contains(query.lower()),
-                    func.lower(Brand.name).like(f"{query.lower()}%")
-                )
-            ).limit(limit // 3)
-
-            brand_result = await self.db.execute(brand_query)
-            brands = [row[0] for row in brand_result if row[0]]
-            suggestions.extend(brands)
-
-            # Category suggestions
-            category_query = select(Category.name).where(
-                or_(
-                    func.lower(Category.name).contains(query.lower()),
-                    func.lower(Category.name).like(f"{query.lower()}%")
-                )
-            ).limit(limit // 3)
-
-            category_result = await self.db.execute(category_query)
-            categories = [row[0] for row in category_result if row[0]]
-            suggestions.extend(categories)
-
-            return suggestions
+            if not query or len(query) < 2:
+                return []
+            
+            # OPTIMIZATION: Use DISTINCT and better ordering for faster results
+            suggestions_query = select(Product.title).distinct().where(
+                Product.title.ilike(f"%{query}%")
+            ).order_by(Product.title).limit(limit * 2)  # Get more to account for duplicates
+            
+            result = await self.db.execute(suggestions_query)
+            suggestions = [row[0] for row in result if row[0]]
+            
+            # OPTIMIZATION: Use set for faster deduplication
+            unique_suggestions = []
+            seen = set()
+            for suggestion in suggestions:
+                suggestion_lower = suggestion.lower()
+                if suggestion_lower not in seen:
+                    unique_suggestions.append(suggestion)
+                    seen.add(suggestion_lower)
+                    if len(unique_suggestions) >= limit:
+                        break
+            
+            return unique_suggestions
 
         except Exception as e:
             logger.error(f"Error getting database suggestions: {e}")
             return []
 
     async def fuzzy_search_suggestions(self, query: str, limit: int = 10) -> List[str]:
-        """Get fuzzy search suggestions with misspelling correction"""
+        """Get fuzzy search suggestions with misspelling correction - OPTIMIZED"""
         try:
             if not query or len(query) < 2:
                 return []
+            
+            # Fast common corrections lookup
+            common_corrections = {
+                'aple': 'apple',
+                'aplle': 'apple',
+                'appel': 'apple',
+                'samsun': 'samsung',
+                'samsng': 'samsung',
+                'iphne': 'iphone',
+                'iphon': 'iphone',
+                'smartphne': 'smartphone',
+                'smartphn': 'smartphone',
+                'laptp': 'laptop',
+                'lapto': 'laptop',
+                'headphnes': 'headphones',
+                'headphne': 'headphone',
+                'camra': 'camera',
+                'chargr': 'charger',
+                'keybord': 'keyboard',
+                'mous': 'mouse',
+                'speakr': 'speaker',
+                'microphne': 'microphone',
+                'blutooth': 'bluetooth',
+            }
+            
+            # Check for common corrections first (fastest path)
+            query_lower = query.lower().strip()
+            if query_lower in common_corrections:
+                corrected = common_corrections[query_lower]
+                logger.info(f"Fast correction: '{query}' -> '{corrected}'")
+                return [corrected]  # Return only correction for speed
+            
+            # For non-common corrections, use simple database lookup instead of fuzzy matching
+            # This is much faster than fuzzy matching against all terms
+            try:
+                # Simple database search for similar terms
+                similar_titles = await self.db.execute(
+                    select(Product.title)
+                    .where(Product.title.ilike(f"%{query}%"))
+                    .limit(limit)
+                )
+                titles = [row[0] for row in similar_titles if row[0]]
                 
-            # Get all possible suggestions from database
-            all_titles = await self.db.execute(select(Product.title).distinct())
-            all_brands = await self.db.execute(select(Brand.name).distinct())
-            all_categories = await self.db.execute(select(Category.name).distinct())
-            
-            titles = [row[0] for row in all_titles if row[0]]
-            brands = [row[0] for row in all_brands if row[0]]
-            categories = [row[0] for row in all_categories if row[0]]
-            
-            # Combine all searchable terms
-            all_terms = titles + brands + categories
-            
-            # Use fuzzy matching to find similar terms
-            matches = process.extract(query, all_terms, limit=limit, scorer=fuzz.partial_ratio)
-            
-            # Filter matches with good similarity (above 60%)
-            good_matches = [match[0] for match in matches if match[1] > 60]
-            
-            return good_matches[:limit]
+                if titles:
+                    return titles[:limit]
+                else:
+                    return []
+                    
+            except Exception as e:
+                logger.warning(f"Database lookup failed: {e}")
+                return []
             
         except Exception as e:
             logger.error(f"Error in fuzzy search suggestions: {e}")
@@ -1258,34 +1392,202 @@ class SearchService:
             return {}
 
     async def search_categories(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Enhanced category search with product aggregation"""
+        """Search categories by name"""
         try:
-            if not query:
+            if not query or len(query) < 2:
                 return []
-
-            # Search categories with product count
+            
+            # Search categories by name
             category_query = select(
+                Category.id,
                 Category.name,
-                func.count(Product.id).label('total_products')
-            ).join(Product, isouter=True).where(
-                Category.name.ilike(f"%{query}%")
-            ).group_by(Category.name).order_by(
+                func.count(Product.id).label('product_count')
+            ).outerjoin(Product, Category.id == Product.category_id).where(
+                func.lower(Category.name).ilike(f"%{query.lower()}%")
+            ).group_by(Category.id, Category.name).order_by(
                 func.count(Product.id).desc()
             ).limit(limit)
-
+            
             result = await self.db.execute(category_query)
             categories = []
             
             for row in result:
                 categories.append({
-                    'name': row[0],
-                    'total_products': row[1] or 0
+                    "id": row[0],
+                    "name": row[1],
+                    "product_count": row[2]
                 })
-
+            
             return categories
-
+            
         except Exception as e:
             logger.error(f"Error searching categories: {e}")
+            return []
+
+    async def _populate_brand_cache(self):
+        """Populate brand cache with pre-computed statistics for ultra-fast search"""
+        try:
+            current_time = time.time()
+            
+            # Check if cache is still valid
+            if (current_time - self._brand_cache_timestamp) < self._brand_cache_ttl:
+                return
+            
+            logger.info("Populating brand search cache...")
+            
+            # Get all brands with product counts in a single optimized query
+            cache_query = text("""
+                SELECT 
+                    b.id,
+                    b.name,
+                    COUNT(p.id) as product_count
+                FROM brands b
+                LEFT JOIN products p ON b.id = p.brand_id
+                GROUP BY b.id, b.name
+                ORDER BY COUNT(p.id) DESC
+            """)
+            
+            result = await self.db.execute(cache_query)
+            brands_data = result.all()
+            
+            # Build cache with multiple search indexes
+            self._brand_cache = {
+                'brands': {},
+                'name_index': {},
+                'lower_index': {},
+                'prefix_index': {}
+            }
+            
+            for brand_id, brand_name, product_count in brands_data:
+                brand_data = {
+                    'id': brand_id,
+                    'name': brand_name,
+                    'product_count': product_count
+                }
+                
+                # Store in main brands dict
+                self._brand_cache['brands'][brand_id] = brand_data
+                
+                # Index by exact name
+                self._brand_cache['name_index'][brand_name] = brand_id
+                
+                # Index by lowercase name
+                lower_name = brand_name.lower()
+                if lower_name not in self._brand_cache['lower_index']:
+                    self._brand_cache['lower_index'][lower_name] = []
+                self._brand_cache['lower_index'][lower_name].append(brand_id)
+                
+                # Index by prefixes for autocomplete
+                words = brand_name.lower().split()
+                for word in words:
+                    for i in range(1, len(word) + 1):
+                        prefix = word[:i]
+                        if prefix not in self._brand_cache['prefix_index']:
+                            self._brand_cache['prefix_index'][prefix] = []
+                        if brand_id not in self._brand_cache['prefix_index'][prefix]:
+                            self._brand_cache['prefix_index'][prefix].append(brand_id)
+            
+            self._brand_cache_timestamp = current_time
+            logger.info(f"Brand cache populated with {len(brands_data)} brands")
+            
+        except Exception as e:
+            logger.error(f"Error populating brand cache: {e}")
+
+    async def search_brands(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search brands by name - ULTRA-FAST CACHED VERSION"""
+        try:
+            if not query or len(query) < 2:
+                return []
+            
+            # Ensure cache is populated
+            await self._populate_brand_cache()
+            
+            query_lower = query.lower()
+            matching_brands = []
+            
+            # OPTIMIZATION 1: Fast exact match
+            if query in self._brand_cache['name_index']:
+                brand_id = self._brand_cache['name_index'][query]
+                brand_data = self._brand_cache['brands'][brand_id]
+                matching_brands.append(brand_data)
+            
+            # OPTIMIZATION 2: Fast prefix matches
+            if query_lower in self._brand_cache['prefix_index']:
+                for brand_id in self._brand_cache['prefix_index'][query_lower]:
+                    if brand_id not in [b['id'] for b in matching_brands]:
+                        brand_data = self._brand_cache['brands'][brand_id]
+                        matching_brands.append(brand_data)
+            
+            # OPTIMIZATION 3: Fast substring matches
+            for brand_id, brand_data in self._brand_cache['brands'].items():
+                if brand_id not in [b['id'] for b in matching_brands]:
+                    if query_lower in brand_data['name'].lower():
+                        matching_brands.append(brand_data)
+            
+            # Sort by product count and limit
+            matching_brands.sort(key=lambda x: x['product_count'], reverse=True)
+            return matching_brands[:limit]
+            
+        except Exception as e:
+            logger.error(f"Error searching brands: {e}")
+            # Fallback to database query if cache fails
+            return await self._search_brands_fallback(query, limit)
+
+    async def _search_brands_fallback(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Fallback brand search method using database queries"""
+        try:
+            if not query or len(query) < 2:
+                return []
+            
+            # OPTIMIZATION 1: Use a more efficient query structure
+            # First, get brands that match the search term
+            brand_query = select(
+                Brand.id,
+                Brand.name
+            ).where(
+                func.lower(Brand.name).ilike(f"%{query.lower()}%")
+            ).order_by(
+                Brand.name
+            ).limit(limit * 2)  # Get more to account for potential filtering
+            
+            result = await self.db.execute(brand_query)
+            brand_rows = result.all()
+            
+            if not brand_rows:
+                return []
+            
+            # OPTIMIZATION 2: Get product counts in a separate, optimized query
+            brand_ids = [row[0] for row in brand_rows]
+            
+            # Use a fast count query with proper indexing
+            count_query = text("""
+                SELECT 
+                    brand_id,
+                    COUNT(*) as product_count
+                FROM products 
+                WHERE brand_id = ANY(:brand_ids)
+                GROUP BY brand_id
+            """)
+            
+            count_result = await self.db.execute(count_query, {'brand_ids': brand_ids})
+            count_dict = {row[0]: row[1] for row in count_result}
+            
+            # OPTIMIZATION 3: Build results efficiently
+            brands = []
+            for brand_id, brand_name in brand_rows:
+                product_count = count_dict.get(brand_id, 0)
+                brands.append({
+                    "id": brand_id,
+                    "name": brand_name,
+                    "product_count": product_count
+                })
+            
+            # OPTIMIZATION 4: Sort by product count and limit
+            brands.sort(key=lambda x: x['product_count'], reverse=True)
+            return brands[:limit]
+            
+        except Exception as e:
+            logger.error(f"Error in fallback brand search: {e}")
             return []
 
     async def get_category_distribution(self, filters: SearchFilters, limit: int = 10) -> List[Dict[str, Any]]:

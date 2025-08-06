@@ -94,6 +94,12 @@ async def admin():
     with open("static/admin.html", "r") as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/about", response_class=HTMLResponse)
+async def about():
+    """Serve the about page"""
+    with open("static/about.html", "r") as f:
+        return HTMLResponse(content=f.read())
+
 @app.get("/terms", response_class=HTMLResponse)
 async def terms():
     """Serve the terms of service page"""
@@ -271,33 +277,26 @@ async def unified_search(
                     "search_type": "categories"
                 }
             else:
-                # Use AI-enhanced aggregated search as primary method
+                # Use optimized search method for better performance
                 try:
-                    results = await search_service.search_products_aggregated(
-                        filters, page, per_page, sort
-                    )
-                    logger.info("AI-enhanced search successful")
+                    results = await search_service.search_products(filters, page, per_page)
+                    logger.info("Optimized search successful")
                     return results
-                except Exception as ai_error:
-                    logger.warning(f"AI-enhanced search failed: {ai_error}")
-                    # Fallback to basic search
-                    try:
-                        results = await search_service.search_products(filters, page, per_page)
-                        logger.info("Basic search successful")
-                        return results
-                    except Exception as basic_error:
-                        logger.error(f"All search methods failed: {basic_error}")
-                        # Return empty results
-                        return {
-                            "products": [],
-                            "total": 0,
-                            "page": page,
-                            "per_page": per_page,
-                            "total_pages": 0,
-                            "execution_time_ms": 0,
-                            "search_type": "fallback",
-                            "error": "No results found"
-                        }
+                except Exception as search_error:
+                    logger.error(f"Search failed: {search_error}")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    # Return empty results
+                    return {
+                        "products": [],
+                        "total": 0,
+                        "page": page,
+                        "per_page": per_page,
+                        "total_pages": 0,
+                        "execution_time_ms": 0,
+                        "search_type": "fallback",
+                        "error": f"Search error: {str(search_error)}"
+                    }
                 
         except Exception as search_error:
             logger.error(f"All search methods failed: {search_error}")
@@ -328,23 +327,29 @@ async def search_categories(
     limit: int = Query(10, ge=1, le=20, description="Maximum categories"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Search categories with Elasticsearch support"""
+    """Search categories by name"""
     try:
-        # Try Elasticsearch first
-        if elasticsearch_service.client:
-            categories = await elasticsearch_service.search_categories(q, limit)
-            if categories:
-                return categories
-        
-        # Fallback to PostgreSQL category search
         search_service = SearchService(db)
         categories = await search_service.search_categories(q, limit)
-        
         return categories
-        
     except Exception as e:
-        logger.error(f"Category search error: {e}")
-        raise HTTPException(status_code=500, detail="Category search service error")
+        logger.error(f"Error searching categories: {e}")
+        return []
+
+@app.get("/brands/search")
+async def search_brands(
+    q: str = Query(..., min_length=2, description="Search query"),
+    limit: int = Query(10, ge=1, le=20, description="Maximum brands"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Search brands by name"""
+    try:
+        search_service = SearchService(db)
+        brands = await search_service.search_brands(q, limit)
+        return brands
+    except Exception as e:
+        logger.error(f"Error searching brands: {e}")
+        return []
 
 @app.get("/product/{product_id}", response_model=ProductSchema)
 async def get_product_by_id(
@@ -416,22 +421,44 @@ async def get_search_suggestions(
     fuzzy: bool = Query(True, description="Enable fuzzy search"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get AI-enhanced search suggestions with fuzzy search support"""
+    """Get fast search suggestions with optimized performance"""
     try:
         search_service = SearchService(db)
         
-        # Always use AI-enhanced suggestions first
-        suggestions = await search_service.get_search_suggestions(q, limit)
+        # Use fast database suggestions only (no AI processing)
+        suggestions = await search_service._get_database_suggestions(q, limit)
         
-        # If no AI suggestions, try fuzzy search
-        if not suggestions:
-            suggestions = await search_service.fuzzy_search_suggestions(q, limit)
+        # Add common corrections if available
+        common_corrections = {
+            'aple': 'apple',
+            'aplle': 'apple',
+            'appel': 'apple',
+            'samsun': 'samsung',
+            'samsng': 'samsung',
+            'iphne': 'iphone',
+            'iphon': 'iphone',
+            'smartphne': 'smartphone',
+            'smartphn': 'smartphone',
+            'laptp': 'laptop',
+            'lapto': 'laptop',
+            'headphnes': 'headphones',
+            'headphne': 'headphone',
+            'camra': 'camera',
+            'chargr': 'charger',
+            'keybord': 'keyboard',
+            'mous': 'mouse',
+            'speakr': 'speaker',
+            'microphne': 'microphone',
+            'blutooth': 'bluetooth',
+        }
         
-        # If still no suggestions, try basic search
-        if not suggestions:
-            suggestions = await search_service._get_database_suggestions(q, limit)
+        # Add correction if query matches common typo
+        if q.lower().strip() in common_corrections:
+            correction = common_corrections[q.lower().strip()]
+            if correction not in suggestions:
+                suggestions.insert(0, correction)
         
-        return suggestions
+        return suggestions[:limit]
         
     except Exception as e:
         logger.error(f"Error getting suggestions: {e}")
